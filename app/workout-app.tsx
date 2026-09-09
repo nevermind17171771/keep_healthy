@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
-import { Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, BookOpen, CalendarDays, Check, CheckCheck, ChevronRight, Cloud, CloudOff, Copy, Download, Dumbbell, Flame, Heart, History, House, Info, Link2, Minus, MoreHorizontal, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Star, Timer, Trash2, Upload, X } from 'lucide-react';
+import { Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, BookOpen, CalendarDays, Check, CheckCheck, ChevronRight, Cloud, CloudOff, Copy, Download, Dumbbell, Flame, Heart, History, House, Info, Link2, Minus, MoreHorizontal, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Star, Timer, Trash2, Upload, Video, Volume2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +10,10 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
 import { Toaster, toast } from 'sonner';
 import MuscleMap from '@/components/muscle-map';
+import CardioSets from '@/components/cardio-sets';
+import { cardioSummary, nextCardioInterval, CARDIO_CSV_FIELDS } from '@/lib/cardio';
+import { shortsSearchUrl } from '@/lib/exercise-video';
+import { playRoundBell } from '@/lib/round-bell';
 import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recommendation, startSession, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry } from '@/lib/model';
 import { useWorkout } from '@/lib/use-workout';
 import { download } from '@/lib/cache';
@@ -132,17 +136,7 @@ export default function WorkoutApp({
     toast.success('휴식 끝! 다음 세트를 시작할 시간이에요.');
     try {
       const c = audioRef.current;
-      if (c) {
-        const o = c.createOscillator(),
-          g = c.createGain();
-        o.connect(g);
-        g.connect(c.destination);
-        o.frequency.value = 660;
-        g.gain.setValueAtTime(.14, c.currentTime);
-        g.gain.exponentialRampToValueAtTime(.01, c.currentTime + .4);
-        o.start();
-        o.stop(c.currentTime + .4);
-      }
+      if (c) void playRoundBell(c).catch(() => {});
     } catch {}
   }, [restEnd, restRemaining]);
   useEffect(() => {
@@ -238,7 +232,7 @@ export default function WorkoutApp({
           length: ex.type === 'cardio' ? 1 : 3
         }, () => makeSet({
           weight: rec.weight,
-          reps: rec.reps,
+          reps: ex.type === 'cardio' ? 0 : rec.reps,
           duration: ex.type === 'time' ? 30 : 0
         }))
       };
@@ -316,7 +310,7 @@ export default function WorkoutApp({
   };
   function exportCSV() {
     const cell = (v: unknown) => '"' + String(v ?? '').replace(/^[=+@-]/, "'$&").replaceAll('"', '""') + '"';
-    const rows = [['date', 'workout', 'exercise', 'equipment', 'set', 'type', 'weight_kg', 'reps', 'duration_seconds', 'distance_km', 'rpe'], ...sessions.flatMap(s => s.exercises.flatMap(e => e.sets.filter(x => x.done).map((x, i) => [s.date, s.name, e.name, e.equipmentId, i + 1, x.kind, x.weight, x.reps, x.duration, x.distance, x.rpe])))];
+    const rows = [['date', 'workout', 'exercise', 'equipment', 'set', 'type', 'weight_kg', 'reps', 'duration_seconds', 'distance_km', 'rpe', ...CARDIO_CSV_FIELDS.map(f => f.header)], ...sessions.flatMap(s => s.exercises.flatMap(e => e.sets.filter(x => x.done).map((x, i) => [s.date, s.name, e.name, e.equipmentId, i + 1, x.kind, x.weight, x.reps, x.duration, x.distance, x.rpe, ...CARDIO_CSV_FIELDS.map(f => x.metrics?.[f.key] ?? '')])))];
     download('\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n'), `keep-healthy-${day()}.csv`, 'text/csv;charset=utf-8');
   }
   async function readImport(file?: File) {
@@ -550,13 +544,13 @@ export default function WorkoutApp({
                     })}><option value="">기본 기록</option>{(state.gyms.find(g => g.id === draft.gymId) || activeGym)?.equipment.filter(x => x.exerciseId === e.exerciseId).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</NativeSelect><button className="text-button" onClick={() => {
                       setNotesId(e.id);
                       setModal('notes');
-                    }}>메모{e.note ? ' •' : ''}</button><button className="text-button" onClick={() => changeDraft(s => {
+                    }}>메모{e.note ? ' •' : ''}</button><a className="text-button video-link" href={shortsSearchUrl(e.name)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`${e.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={15} />쇼츠 검색</a>{ex?.type !== 'cardio' && <button className="text-button" onClick={() => changeDraft(s => {
                       s.exercises[ei].sets.unshift(makeSet({
                         weight: Math.round((e.sets.find(x => x.kind === 'work')?.weight || 0) * .5 / 2.5) * 2.5,
                         reps: 10,
                         kind: 'warmup'
                       }));
-                    })}>+ 워밍업</button></div>
+                    })}>+ 워밍업</button>}</div>
  {eq?.setup && <div className="equipment-note"><SlidersHorizontal size={14} />{eq.setup}</div>}{e.note && <p className="exercise-note">{e.note}</p>}
  {!timed && <div className="recommendation"><Sparkles size={14} /><span><b>{rec.action}</b> {rec.weight > 0 ? `${rec.weight}kg · ${rec.reps}회` : rec.reason}</span><button aria-label="추천 이유" className="icon-button" onClick={() => toast(rec.reason)}><Info size={14} /></button>{rec.weight > 0 && <button onClick={() => changeDraft(s => {
                       s.exercises[ei].sets.forEach(x => {
@@ -566,36 +560,39 @@ export default function WorkoutApp({
                         }
                       });
                     })}>적용</button>}</div>}
- <div className={'set-head ' + (timed ? 'timed' : '')}><span>세트</span><span>{timed ? '시간 (분:초)' : ex?.type === 'assisted' ? '보조 kg' : ex?.type === 'bodyweight' ? '추가 kg' : ex?.equipment === '덤벨' ? '한쪽 kg' : 'kg'}</span><span>{ex?.type === 'cardio' ? '거리 km' : timed ? '' : '횟수'}</span><span>RPE</span><span>완료</span></div>
+ {ex?.type === 'cardio' ? <CardioSets name={e.name} sets={e.sets} onChange={(id, patch) => changeDraft(s => {
+                    const set = s.exercises.find(x => x.id === e.id)!.sets.find(x => x.id === id)!;
+                    Object.assign(set, patch);
+                  })} onComplete={id => toggleSet(e.id, id)} /> : <><div className={'set-head ' + (timed ? 'timed' : '')}><span>세트</span><span>{timed ? '시간 (분:초)' : ex?.type === 'assisted' ? '보조 kg' : ex?.type === 'bodyweight' ? '추가 kg' : ex?.equipment === '덤벨' ? '한쪽 kg' : 'kg'}</span><span>{timed ? '' : '횟수'}</span><span>RPE</span><span>완료</span></div>
  {e.sets.map((s, si) => <div className={'set-row ' + (s.done ? 'done ' : '') + (s.kind === 'warmup' ? 'warmup' : '')} key={s.id}><button className="set-kind" title="세트 유형 변경" aria-label={`${ei + 1}번 운동 ${si + 1}번 세트 유형`} onClick={() => updateSet(e.id, s.id, 'kind', s.kind === 'work' ? 'warmup' : s.kind === 'warmup' ? 'drop' : 'work')}>{s.kind === 'warmup' ? 'W' : s.kind === 'drop' ? 'D' : si + 1}</button>{timed ? <input className="set-input" aria-label={`${e.name} ${si + 1}세트 시간`} defaultValue={timeLabel(s.duration)} key={s.id + 'time'} inputMode="text" placeholder="00:00" onBlur={ev => {
-                      if (!/^\d{1,3}:[0-5]\d$/.test(ev.target.value)) {
-                        toast.error('시간을 20:30 형식으로 입력하세요.');
-                        ev.target.value = timeLabel(s.duration);
-                        return;
-                      }
-                      updateSet(e.id, s.id, 'duration', parseTime(ev.target.value));
-                    }} /> : <div className="weight-control"><button aria-label={`${e.name} ${si + 1}세트 중량 줄이기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.max(0, s.weight - (eq?.step || ex?.step || 2.5)))}>−</button><input className="set-input" type="number" min="0" step="0.5" inputMode="decimal" aria-label={`${e.name} ${si + 1}세트 중량`} value={s.weight || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, 'weight', Number(ev.target.value))} /><button aria-label={`${e.name} ${si + 1}세트 중량 늘리기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.round((s.weight + (eq?.step || ex?.step || 2.5)) * 100) / 100)}>+</button></div>}
- {ex?.type === 'time' ? <span /> : <input className="set-input" type="number" min="0" inputMode={ex?.type === 'cardio' ? 'decimal' : 'numeric'} aria-label={`${e.name} ${si + 1}세트 ${ex?.type === 'cardio' ? '거리' : '횟수'}`} value={ex?.type === 'cardio' ? s.distance || '' : s.reps || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, ex?.type === 'cardio' ? 'distance' : 'reps', Number(ev.target.value))} />}
- <NativeSelect className="rpe-select" aria-label={`${e.name} ${si + 1}세트 RPE`} value={s.rpe} onChange={ev => updateSet(e.id, s.id, 'rpe', Number(ev.target.value))}><option value={0}>—</option>{[5, 6, 7, 8, 9, 10].map(r => <option key={r} value={r}>{r}</option>)}</NativeSelect><Checkbox className="set-check" aria-label={`${e.name} ${si + 1}세트 완료`} checked={s.done} onCheckedChange={() => toggleSet(e.id, s.id)} /></div>)}
- {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => `${s.weight}kg × ${s.reps}회`).join(' / ')}</p></details>}
+                        if (!/^\d{1,3}:[0-5]\d$/.test(ev.target.value)) {
+                          toast.error('시간을 20:30 형식으로 입력하세요.');
+                          ev.target.value = timeLabel(s.duration);
+                          return;
+                        }
+                        updateSet(e.id, s.id, 'duration', parseTime(ev.target.value));
+                      }} /> : <div className="weight-control"><button aria-label={`${e.name} ${si + 1}세트 중량 줄이기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.max(0, s.weight - (eq?.step || ex?.step || 2.5)))}>−</button><input className="set-input" type="number" min="0" step="0.5" inputMode="decimal" aria-label={`${e.name} ${si + 1}세트 중량`} value={s.weight || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, 'weight', Number(ev.target.value))} /><button aria-label={`${e.name} ${si + 1}세트 중량 늘리기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.round((s.weight + (eq?.step || ex?.step || 2.5)) * 100) / 100)}>+</button></div>}
+ {ex?.type === 'time' ? <span /> : <input className="set-input" type="number" min="0" inputMode="numeric" aria-label={`${e.name} ${si + 1}세트 횟수`} value={s.reps || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, 'reps', Number(ev.target.value))} />}
+ <NativeSelect className="rpe-select" aria-label={`${e.name} ${si + 1}세트 RPE`} value={s.rpe} onChange={ev => updateSet(e.id, s.id, 'rpe', Number(ev.target.value))}><option value={0}>—</option>{[5, 6, 7, 8, 9, 10].map(r => <option key={r} value={r}>{r}</option>)}</NativeSelect><Checkbox className="set-check" aria-label={`${e.name} ${si + 1}세트 완료`} checked={s.done} onCheckedChange={() => toggleSet(e.id, s.id)} /></div>)}</>}
+ {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => ex?.type === 'cardio' ? cardioSummary(e.name, s) : ex?.type === 'time' ? timeLabel(s.duration) : `${s.weight}kg × ${s.reps}회`).join(' / ')}</p></details>}
  <div className="set-footer"><button onClick={() => changeDraft(s => {
                       const prev = s.exercises[ei].sets.at(-1);
                       s.exercises[ei].sets.push(makeSet({
-                        ...prev,
+                        ...(ex?.type === 'cardio' ? nextCardioInterval(prev) : prev),
                         id: uid(),
                         done: false,
                         kind: 'work'
                       }));
-                    })}><Plus size={15} />세트</button><button onClick={() => changeDraft(s => {
+                    })}><Plus size={15} />{ex?.type === 'cardio' ? '구간 추가' : '세트'}</button>{ex?.type !== 'cardio' && <button onClick={() => changeDraft(s => {
                       const last = s.exercises[ei].sets.at(-1);
                       s.exercises[ei].sets.push(makeSet({
                         weight: Math.round((last?.weight || 0) * .8 / 2.5) * 2.5,
                         reps: last?.reps || 10,
                         kind: 'drop'
                       }));
-                    })}>드롭</button><button onClick={() => changeDraft(s => {
+                    })}>드롭</button>}<button onClick={() => changeDraft(s => {
                       if (s.exercises[ei].sets.length > 1) s.exercises[ei].sets.pop();
-                    })}>마지막 세트 삭제</button><span className="spacer" /><button aria-label={`${e.name} 위로`} disabled={ei === 0} onClick={() => changeDraft(s => {
+                    })}>{ex?.type === 'cardio' ? '마지막 구간 삭제' : '마지막 세트 삭제'}</button><span className="spacer" /><button aria-label={`${e.name} 위로`} disabled={ei === 0} onClick={() => changeDraft(s => {
                       [s.exercises[ei - 1], s.exercises[ei]] = [s.exercises[ei], s.exercises[ei - 1]];
                     })}><ArrowUp size={15} /></button><button aria-label={`${e.name} 삭제`} onClick={() => setConfirm({
                       title: '이 운동을 삭제할까요?',
@@ -604,13 +601,13 @@ export default function WorkoutApp({
                         s.exercises.splice(ei, 1);
                       })
                     })}><Trash2 size={15} /></button></div>
- <div className="rest-options"><Timer size={14} /><NativeSelect aria-label={`${e.name} 휴식 시간`} value={e.rest} onChange={ev => changeDraft(s => {
+ {ex?.type !== 'cardio' && <div className="rest-options"><Timer size={14} /><NativeSelect aria-label={`${e.name} 휴식 시간`} value={e.rest} onChange={ev => changeDraft(s => {
                       s.exercises[ei].rest = Number(ev.target.value);
                     })}>{[30, 45, 60, 90, 120, 150, 180, 240, 300].map(t => <option key={t} value={t}>{timeLabel(t)} 휴식</option>)}</NativeSelect>{ei < draft.exercises.length - 1 && <button className={e.superset ? 'linked' : ''} onClick={() => changeDraft(s => {
                       const key = s.exercises[ei].superset ? '' : uid();
                       s.exercises[ei].superset = key;
                       s.exercises[ei + 1].superset = key;
-                    })}><Link2 size={14} />{e.superset ? '슈퍼세트 연결됨' : '다음 종목과 슈퍼세트'}</button>}</div></section>;
+                    })}><Link2 size={14} />{e.superset ? '슈퍼세트 연결됨' : '다음 종목과 슈퍼세트'}</button>}</div>}</section>;
               })}<button className="add-workout" onClick={() => openPicker()}><Plus size={19} />운동 추가</button></div><aside className="session-side"><section className="panel"><div className="section-title"><h3>오늘의 타겟</h3><span>{draft.exercises.length}개 종목</span></div><MuscleMap primary={plannedMuscles} secondary={plannedSecondary} compact /><div className="target-labels">{plannedMuscles.map(m => <span key={m}>{MUSCLES[m]}</span>)}</div></section><section className="panel"><h3>오늘의 컨디션</h3><div className="condition-buttons">{['가벼움', '보통', '피곤함'].map(c => <button className={draft.condition === c ? 'selected' : ''} onClick={() => changeDraft(s => {
                     s.condition = c;
                   })} key={c}>{c}</button>)}</div><p className="micro">RPE 7: 약 3회, 8: 약 2회, 9: 약 1회 더 할 수 있는 느낌. 선택 입력이에요.</p></section></aside></div></>}
@@ -722,7 +719,14 @@ export default function WorkoutApp({
                     const x = a.sessions.find(x => x.id === s.id)!;
                     delete x.deletedAt;
                     x.updatedAt = Date.now();
-                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식 시간은 화면을 닫아도 경과 시간을 계산해요. 소리 알림은 앱이 활성화되어 있을 때 동작하며, 기기의 절전 설정에 따라 제한될 수 있어요.</p><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.0 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
+                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식 시간은 화면을 닫아도 경과 시간을 계산해요. 소리 알림은 앱이 활성화되어 있을 때 동작하며, 기기의 절전 설정에 따라 제한될 수 있어요.</p><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={async () => {
+                  try {
+                    audioRef.current ||= new AudioContext();
+                    if (!(await playRoundBell(audioRef.current))) toast('기기 소리 설정을 확인해 주세요.');
+                  } catch {
+                    toast.error('소리를 재생할 수 없어요. 기기와 브라우저 설정을 확인해 주세요.');
+                  }
+                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.1 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
  {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
@@ -747,8 +751,8 @@ export default function WorkoutApp({
               bodyweight: '맨몸 · 횟수',
               assisted: '보조 중량 × 횟수',
               time: '시간',
-              cardio: '시간 · 거리'
-            }[selectedEx.type])}</div><MuscleMap primary={selectedEx.primary} secondary={selectedEx.secondary} compact /><div className="muscle-detail"><div><span className="primary-marker" />주동근<strong>{selectedEx.primaryLabels.join(' · ') || '종목과 동작에 따라 다름'}</strong></div><div><span className="secondary-marker" />보조근<strong>{selectedEx.secondaryLabels.join(' · ') || '별도 표기 없음'}</strong></div></div><div className="guide-block"><h3>동작 포인트</h3><p>{selectedEx.how}</p><h3>체크할 점</h3><p>{selectedEx.caution}</p>{selectedEx.equipment === '덤벨' && <p>중량은 덤벨 한 개 기준으로 일관되게 기록하세요. 볼륨 계산도 입력한 중량을 기준으로 해요.</p>}{selectedEx.type === 'assisted' && <p>기구의 보조 중량을 입력하세요. 보조가 줄어들수록 난도가 높아져요.</p>}</div><div className="modal-actions"><button className="secondary" onClick={() => setModal('picker')}><ArrowLeft size={16} />목록</button><button className="primary" onClick={() => addExercise(selectedEx.id)}><Plus size={17} />{swapId ? '이 운동으로 교체' : '운동에 추가'}</button></div></>}
+              cardio: '기구별 기록'
+            }[selectedEx.type])}</div><MuscleMap primary={selectedEx.primary} secondary={selectedEx.secondary} compact /><div className="muscle-detail"><div><span className="primary-marker" />주동근<strong>{selectedEx.primaryLabels.join(' · ') || '종목과 동작에 따라 다름'}</strong></div><div><span className="secondary-marker" />보조근<strong>{selectedEx.secondaryLabels.join(' · ') || '별도 표기 없음'}</strong></div></div><div className="guide-block"><h3>동작 포인트</h3><p>{selectedEx.how}</p><h3>체크할 점</h3><p>{selectedEx.caution}</p>{selectedEx.equipment === '덤벨' && <p>중량은 덤벨 한 개 기준으로 일관되게 기록하세요. 볼륨 계산도 입력한 중량을 기준으로 해요.</p>}{selectedEx.type === 'assisted' && <p>기구의 보조 중량을 입력하세요. 보조가 줄어들수록 난도가 높아져요.</p>}</div><a className="secondary video-search" href={shortsSearchUrl(selectedEx.name)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><Video size={18} />유튜브 쇼츠 검색<ArrowUp size={15} className="external-arrow" /></a><p className="micro">새 탭에서 종목명으로 검색해요. 필요하면 YouTube의 Shorts 필터를 선택하세요.</p><div className="modal-actions"><button className="secondary" onClick={() => setModal('picker')}><ArrowLeft size={16} />목록</button><button className="primary" onClick={() => addExercise(selectedEx.id)}><Plus size={17} />{swapId ? '이 운동으로 교체' : '운동에 추가'}</button></div></>}
  {modal === 'routine' && editRoutine && <><Field label="루틴 이름"><input value={editRoutine.name} maxLength={100} onChange={e => setEditRoutine({
               ...editRoutine,
               name: e.target.value
@@ -889,7 +893,7 @@ export default function WorkoutApp({
             })} /></Field>}<div className="finish-stats"><div><b>{completedSets(draft)}</b><span>완료 본세트</span></div><div><b>{Math.round(elapsed(draft, now) / 60)}</b><span>운동 시간 (분)</span></div><div><b>{number(volume(draft))}</b><span>중량 볼륨 (kg)</span></div></div><Field label="오늘의 한 줄"><textarea maxLength={4000} placeholder="오늘 잘한 점이나 다음에 신경 쓸 점" value={draft.note} onChange={e => changeDraft(s => {
               s.note = e.target.value;
             })} /></Field><p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
- {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? `${timeLabel(s.duration)} · ${s.distance}km` : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${s.weight}kg × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
+ {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? cardioSummary(e.name, s) : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${s.weight}kg × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
               title: '운동 기록을 삭제할까요?',
               detail: '설정 → 삭제한 운동에서 복원할 수 있어요.',
               action: () => {

@@ -31,3 +31,76 @@ test('API rejects stale writes without erasing the accepted snapshot',async()=>{
 test('API rejects malformed payloads, oversized backups, and cross-origin writes',async()=>{const db=database();assert.equal((await PUT(req('user-a',{state:{},revision:0}))).status,400);assert.equal((await PUT(req('user-a',{state:defaultState(),revision:-1}))).status,400);assert.equal((await PUT(req('user-a',{state:defaultState(),revision:0},'https://evil.test'))).status,403);assert.equal((await PUT(req('user-a',{state:{legacyArchive:'x'.repeat(1500001)},revision:0}))).status,413);db.close();});
 test('PWA manifest and service-worker precache point to existing assets',()=>{const manifest=JSON.parse(readFileSync('public/manifest.webmanifest','utf8'));assert.equal(manifest.display,'standalone');assert.equal(manifest.scope,'/');for(const icon of manifest.icons)assert.ok(readFileSync('public'+icon.src).length>0);for(const file of ['public/offline.html','public/sw.js'])assert.ok(readFileSync(file).length>0);const worker=readFileSync('public/sw.js','utf8');assert.match(worker,/pathname.startsWith\('\/api\/'\)/);assert.ok(!worker.includes('cache.put(request, await fetch(request))'));});
 test('concurrent unfinished workouts remain recoverable after merging',()=>{const a=defaultState(),b=defaultState();a.draft=startSession(a);b.draft=startSession(b);b.draft.name='second device';const merged=mergeStates(a,b);assert.equal(merged.draft!.id,a.draft.id);assert.equal(merged.recoveredDrafts.length,1);assert.match(merged.recoveredDrafts[0].name,/second device/);assert.equal(mergeStates(merged,b).recoveredDrafts.length,1);assert.equal(migrate({local:a,remote:b}).recoveredDrafts.length,1);});
+
+import {cardioFields,cardioValue,cardioPatch,cardioSummary,nextCardioInterval,CARDIO_CSV_FIELDS} from '../lib/cardio';
+import {shortsSearchUrl} from '../lib/exercise-video';
+import {boxingBellSamples} from '../lib/round-bell';
+import {preserveMissingMetrics} from '../lib/preserve-metrics';
+test('treadmills and stairs expose the measurements their consoles report',()=>{
+ const fields=(name:string)=>cardioFields(name).filter(f=>!f.optional).map(f=>f.key);
+ assert.deepEqual(fields('인클라인 트레드밀 워크'),['duration','distance','incline','elevationGain','calories','speed']);
+ assert.deepEqual(fields('트레드밀'),['duration','distance','calories','speed']);
+ assert.deepEqual(fields('천국의 계단'),['duration','steps','calories','floors']);
+ for(const name of ['인클라인 트레드밀 워크','트레드밀','천국의 계단'])assert.equal(find(name).type,'cardio');
+ assert.ok(fields('사이클').includes('rpm'));
+ assert.ok(cardioFields('로잉머신').some(f=>f.key==='split'&&f.unit==='분:초/500m'));
+ assert.ok(!fields('천국의 계단').includes('distance'));
+});
+test('rowing metres round-trip to canonical kilometres without changing existing records',()=>{
+ const field=cardioFields('로잉머신').find(f=>f.key==='distance')!;
+ const row=makeSet({distance:1.235});assert.equal(cardioValue(row,field),1235);
+ assert.deepEqual(cardioPatch(field,2500),{distance:2.5});
+ assert.match(cardioSummary('로잉머신',makeSet({distance:2.5,metrics:{split:125,calories:103}})),/이동거리 2,500m.*500m 페이스 02:05\/500m/);
+});
+test('cardio metrics survive JSON backup and validation, including zero incline and descending grade',()=>{
+ const state=saved('인클라인 트레드밀 워크');const row=state.sessions[0].exercises[0].sets[0];
+ row.metrics={incline:0,speed:5.5,elevationGain:168,calories:234,heartRate:132};
+ const loaded=migrate(JSON.parse(JSON.stringify(state)));assert.deepEqual(loaded.sessions[0].exercises[0].sets[0].metrics,row.metrics);
+ assert.match(cardioSummary('인클라인 트레드밀 워크',row),/경사 0%/);
+ row.metrics.incline=-3;assert.equal(stateSchema.safeParse(state).success,true);
+ for(const metrics of [{calories:-1},{steps:2.4},{heartRate:Infinity},{speed:NaN}]){row.metrics=metrics;assert.equal(stateSchema.safeParse(state).success,false);}
+ delete row.metrics;assert.equal(stateSchema.safeParse(state).success,true);
+});
+test('unrecorded measurements are empty; the app never invents calories or vertical gain',()=>{
+ const row=makeSet({duration:1800,distance:2.5,metrics:{incline:10,speed:5}});
+ assert.equal(cardioValue(row,cardioFields('인클라인 트레드밀 워크').find(f=>f.key==='calories')!),undefined);
+ assert.doesNotMatch(cardioSummary('인클라인 트레드밀 워크',row),/칼로리|수직 이동거리/);
+ assert.deepEqual(cardioPatch(cardioFields('트레드밀').find(f=>f.key==='calories')!,undefined),{metrics:{calories:undefined}});
+ assert.equal(CARDIO_CSV_FIELDS.find(f=>f.key==='elevationGain')?.header,'elevation_gain_m');
+ assert.equal(CARDIO_CSV_FIELDS.find(f=>f.key==='split')?.header,'split_seconds_per_500m');
+});
+test('new cardio intervals copy machine settings but clear prior effort and totals',()=>{
+ const prev=makeSet({duration:900,distance:1.2,reps:50,metrics:{incline:12,speed:4.8,resistance:7,elevationGain:140,calories:99,steps:420,floors:22,heartRate:140}});
+ const next=makeSet(nextCardioInterval(prev));
+ assert.deepEqual(next.metrics,{incline:12,speed:4.8,resistance:7});assert.equal(next.duration,0);assert.equal(next.distance,0);assert.equal(next.reps,0);assert.equal(next.done,false);assert.equal(next.rpe,0);
+});
+test('legacy cardio extras migrate out of the archive with units intact',()=>{
+ const source=structuredClone(legacy) as any;Object.assign(source.sessions[0].exercises[0].sets[0],{incline:0,speed:6.5,calories:220,elevationGain:145});source.sessions[0].exercises[2].sets[0].split='02:05';
+ const state=migrate(source);assert.deepEqual(state.sessions[0].exercises[0].sets[0].metrics,{incline:0,speed:6.5,calories:220,elevationGain:145});assert.equal(state.sessions[0].exercises[2].sets[0].metrics?.split,125);assert.deepEqual(state.legacyArchive,source);
+});
+test('older clients cannot erase server metrics; latest clients can explicitly clear them',async()=>{
+ const db=database();try {const state=saved('트레드밀');state.sessions[0].exercises[0].sets[0].metrics={incline:4,calories:200};
+ assert.equal((await PUT(req('metrics-user',{state,revision:0}))).status,200);
+ const old=structuredClone(state);delete old.sessions[0].exercises[0].sets[0].metrics;old.sessions[0].exercises[0].sets[0].duration=1600;
+ assert.equal((await PUT(req('metrics-user',{state:old,revision:1}))).status,200);
+ const loaded=await(await GET(req('metrics-user'))).json() as any;assert.deepEqual(loaded.state.sessions[0].exercises[0].sets[0].metrics,{incline:4,calories:200});assert.equal(loaded.state.sessions[0].exercises[0].sets[0].duration,1600);
+ loaded.state.sessions[0].exercises[0].sets[0].metrics={};assert.equal((await PUT(req('metrics-user',{state:loaded.state,revision:2}))).status,200);
+ const cleared=await(await GET(req('metrics-user'))).json() as any;assert.deepEqual(cleared.state.sessions[0].exercises[0].sets[0].metrics,{});
+ }finally{db.close();}
+});
+test('metric preservation follows a draft into finished records and does not leak between sessions',()=>{
+ const previous=saved('트레드밀');previous.draft=previous.sessions.pop()!;previous.draft.exercises[0].sets[0].metrics={calories:200};
+ const incoming=structuredClone(previous);incoming.sessions=[incoming.draft!];incoming.draft=null;delete incoming.sessions[0].exercises[0].sets[0].metrics;
+ const preserved=preserveMissingMetrics(incoming,previous);assert.equal(preserved.sessions[0].exercises[0].sets[0].metrics?.calories,200);
+ incoming.sessions[0].id='unrelated';delete incoming.sessions[0].exercises[0].sets[0].metrics;preserveMissingMetrics(incoming,previous);assert.equal(incoming.sessions[0].exercises[0].sets[0].metrics,undefined);
+});
+test('Shorts searches encode Korean names and punctuation as one external query',()=>{
+ const name='인클라인 트레드밀 & 로잉? #1',url=new URL(shortsSearchUrl(name));assert.equal(url.origin,'https://www.youtube.com');assert.equal(url.pathname,'/results');assert.equal(url.searchParams.get('search_query'),name+' 운동 자세 쇼츠 #shorts');assert.equal([...url.searchParams].length,1);assert.equal(url.hash,'');
+});
+test('round bell audio has three distinct strikes, no clipping, and a quiet tail at common sample rates',()=>{
+ for(const rate of [44100,48000]){const samples=boxingBellSamples(rate);assert.equal(samples.length,Math.ceil(2.8*rate));assert.ok(samples.every(n=>Number.isFinite(n)&&Math.abs(n)<1));
+ const rms=(start:number,end:number)=>Math.sqrt(samples.slice(Math.floor(start*rate),Math.floor(end*rate)).reduce((sum,n)=>sum+n*n,0)/((end-start)*rate));
+ assert.ok(rms(.005,.05)>.05);assert.ok(rms(.285,.33)>rms(.23,.27));assert.ok(rms(.565,.61)>rms(.51,.55));assert.ok(rms(2.7,2.8)<.001);
+ }
+ assert.throws(()=>boxingBellSamples(NaN));assert.throws(()=>boxingBellSamples(0));
+});

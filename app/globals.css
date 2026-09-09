@@ -2432,3 +2432,28 @@ details summary {
   color: var(--coral);
 }
 
+
+/* Machine-specific recording keeps the common fields within a thumb's reach. */
+.cardio-records { padding: 0 18px; }
+.cardio-records > .micro { line-height: 1.7; margin: 14px 0; }
+.cardio-segment { margin: 12px 0; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--background); }
+.cardio-segment.done { border-color: #f25542; }
+.cardio-segment-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.cardio-segment-header > strong { font-size: 13px; }
+.cardio-complete { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; font-size: 12px; }
+.cardio-complete button { width: 26px; height: 26px; }
+.cardio-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+.cardio-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cardio-field > span { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 3px 6px; font-size: 12px; }
+.cardio-field small { color: var(--muted-foreground); font-size: 11px; }
+.cardio-field input, .cardio-field select { min-width: 0; width: 100%; min-height: 46px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 16px; font-variant-numeric: tabular-nums; background: var(--muted); color: var(--foreground); }
+.cardio-field input::placeholder { font-size: 13px; color: var(--muted-foreground); }
+.cardio-extra { margin-top: 14px; border-top: 1px solid var(--border); }
+.cardio-extra summary { padding: 14px 0; min-height: 44px; font-size: 12px; cursor: pointer; color: var(--muted-foreground); }
+.video-link, .video-search { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; min-height: 44px; }
+.video-search { justify-content: center; width: 100%; margin: 16px 0 0; }
+.external-arrow { transform: rotate(45deg); }
+.bell-setting { margin: 18px 0; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.bell-setting strong { font-size: 13px; }
+.bell-setting .micro { margin-bottom: 0; }
+@media (max-width: 420px) { .cardio-records { padding: 0 12px; } .cardio-segment { padding: 12px; } .cardio-fields { gap: 12px 10px; } .exercise-subbar { flex-wrap: wrap; } }

@@ -1,15 +1,32 @@
 import legacy from './legacy-catalog.json';
 import { z } from 'zod';
+import { legacyCardioMetrics } from './legacy-cardio';
 export const VERSION = 4;
 export const uid = () => crypto.randomUUID();
 const num = z.number().finite().min(0).max(1000000);
 const timestamp = z.number().finite().min(0).max(8640000000000000);
+export const cardioMetricsSchema = z.object({
+  calories: num.optional(),
+  speed: num.max(200).optional(),
+  incline: z.number().finite().min(-20).max(100).optional(),
+  elevationGain: num.optional(),
+  steps: num.int().optional(),
+  floors: num.optional(),
+  rpm: num.max(1000).optional(),
+  resistance: num.max(1000).optional(),
+  watts: num.max(10000).optional(),
+  strokeRate: num.max(300).optional(),
+  split: num.optional(),
+  rounds: num.int().optional(),
+  heartRate: num.max(300).optional()
+});
 export const setSchema = z.object({
   id: z.string(),
   weight: num,
   reps: num.int(),
   duration: num,
   distance: num,
+  metrics: cardioMetricsSchema.optional(),
   done: z.boolean(),
   kind: z.enum(['work', 'warmup', 'drop']),
   rpe: z.number().min(0).max(10).default(0)
@@ -254,6 +271,7 @@ export const makeSet = (v: Partial<SetEntry> = {}): SetEntry => ({
   reps: 10,
   duration: 0,
   distance: 0,
+  metrics: {},
   done: false,
   kind: 'work',
   rpe: 0,
@@ -395,7 +413,7 @@ export function startSession(state: AppState, routine?: Routine): Session {
           length: e.sets
         }, () => makeSet({
           weight: rec.weight || e.weight,
-          reps: e.reps,
+          reps: x?.type === 'cardio' ? 0 : e.reps,
           duration: x?.type === 'time' ? 30 : 0
         }))
       };
@@ -488,6 +506,7 @@ export function migrate(input: unknown): AppState {
             reps: finite(x.reps),
             duration: legacyDuration(e.name, x.duration),
             distance: finite(x.distance) / ((legacy.EX_FORMAT as any)[e.name]?.units?.distance === 'm' ? 1000 : 1),
+            metrics: legacyCardioMetrics(x),
             done: !!x.done,
             kind: x.isWarmup ? 'warmup' : x.isDrop ? 'drop' : 'work',
             rpe: Math.min(10, finite(x.rpe))

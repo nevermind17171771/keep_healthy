@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { stateSchema, defaultState } from '@/lib/model';
+import { preserveMissingMetrics } from '@/lib/preserve-metrics';
 export const dynamic = 'force-dynamic';
 function user(request: Request) {
   const id = request.headers.get('oai-authenticated-user-id');
@@ -88,6 +89,10 @@ export async function PUT(request: Request) {
       payload: string;
       revision: number;
     }>();
+    if (previous) {
+      const old = stateSchema.safeParse(JSON.parse(previous.payload));
+      if (old.success) preserveMissingMetrics(checked.data, old.data);
+    }
     const result = await db.prepare('UPDATE workout_state SET payload=?,revision=revision+1,modified=? WHERE user_id=? AND revision=? RETURNING revision').bind(JSON.stringify(checked.data), now, id, body.revision).first<{
       revision: number;
     }>();
