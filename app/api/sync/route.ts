@@ -91,7 +91,7 @@ export async function PUT(request: Request) {
     }>();
     if (previous) {
       const old = stateSchema.safeParse(JSON.parse(previous.payload));
-      if (old.success) preserveMissingMetrics(checked.data, old.data);
+      if (old.success) preserveMissingMetrics(checked.data, old.data,body.clientSchema!==2);
     }
     const result = await db.prepare('UPDATE workout_state SET payload=?,revision=revision+1,modified=? WHERE user_id=? AND revision=? RETURNING revision').bind(JSON.stringify(checked.data), now, id, body.revision).first<{
       revision: number;

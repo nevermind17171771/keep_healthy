@@ -17,3 +17,21 @@ test('active exercises have outbound video search links and settings have a bell
  const html=renderToString(<WorkoutApp initialPage="session"/>);assert.match(html,/트레드밀 유튜브 쇼츠 검색 \(새 탭\)/);assert.match(html,/target="_blank" rel="noopener noreferrer"/);assert.ok(!html.includes('<iframe'));assert.ok(html.includes('구간 추가'));assert.ok(!html.includes('트레드밀 1세트 중량'));
  const settings=renderToString(<WorkoutApp initialPage="settings"/>);assert.match(settings,/복싱 라운드 벨/);assert.match(settings,/미리 듣기/);
 });
+
+import FocusWorkout from '../components/focus-workout';
+import RecordingEditor from '../components/recording-editor';
+import StrengthSets from '../components/strength-sets';
+import {state as fixture} from './ui-store-fixture';
+import {defaultRecording,degreesToPercent} from '../lib/recording-settings';
+test('focus view renders one exercise with a current set, previous reference and live rest controls',()=>{
+ const state=structuredClone(fixture),session=state.draft!;const html=renderToString(<FocusWorkout state={state} session={session} restRemaining={75} onSkipRest={()=>{}} onExtendRest={()=>{}} onChange={()=>{}} onComplete={()=>{}} onSettings={()=>{}} onEquipment={()=>{}} onTargets={()=>{}} onAddSet={()=>{}} onRest={()=>{}} onNotes={()=>{}}/>);
+ assert.match(html,/집중할 운동/);assert.match(html,/지난 기록/);assert.match(html,/오늘 목표/);assert.match(html,/01:15/);assert.match(html,/휴식 끝내기/);assert.equal((html.match(/class="focus-title"/g)||[]).length,1);assert.match(html,/1세트 완료/);
+});
+test('recording editor exposes unit selection, ordering, optional fields and defaults',()=>{
+ const html=renderToString(<RecordingEditor name="인클라인 트레드밀 워크" cardio dumbbell={false} value={defaultRecording()} onSave={()=>{}}/>);assert.match(html,/경사율 \(%\)/);assert.match(html,/각도 \(°\)/);assert.match(html,/기구 레벨/);assert.match(html,/기본 속도/);assert.match(html,/칼로리 먼저 표시/);assert.match(html,/속도 위로/);
+ const dumbbell=renderToString(<RecordingEditor name="덤벨 벤치프레스" cardio={false} dumbbell value={defaultRecording(true)} onSave={()=>{}}/>);assert.match(dumbbell,/양쪽 합계/);assert.match(dumbbell,/>lb</);
+});
+test('weight pairs and degree cardio render in selected units with unchanged canonical records',()=>{
+ const row=makeSet({weight:20,reps:10}),settings={...defaultRecording(true),weightBasis:'pair' as const};const html=renderToString(<StrengthSets name="덤벨 벤치프레스" type="weight" sets={[row]} previous={[row]} recording={settings} index={0} onChange={()=>{}} onComplete={()=>{}}/>);assert.match(html,/양쪽 합계 kg/);assert.match(html,/value="40"/);assert.match(html,/40kg \(양쪽 합계\)/);assert.equal(row.weight,20);
+ const cardio=renderToString(<CardioSets name="인클라인 트레드밀 워크" recording={{...defaultRecording(),inclineUnit:'degree'}} sets={[makeSet({metrics:{incline:degreesToPercent(15)}})]} onChange={()=>{}} onComplete={()=>{}}/>);assert.match(cardio,/value="15"/);assert.match(cardio,/>°</);
+});

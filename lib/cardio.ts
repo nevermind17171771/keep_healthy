@@ -1,5 +1,6 @@
+import { displayedWeight, toStoredWeight, percentToDegrees, degreesToPercent, type RecordingSettings } from './recording-settings';
 /** Canonical storage: duration/split in seconds, distance in kilometres, elevation in metres. */
-export type CardioMetric = 'calories' | 'speed' | 'incline' | 'elevationGain' | 'steps' | 'floors' | 'rpm' | 'resistance' | 'watts' | 'strokeRate' | 'split' | 'rounds' | 'heartRate';
+export type CardioMetric = 'calories' | 'speed' | 'incline' | 'inclineLevel' | 'elevationGain' | 'steps' | 'floors' | 'rpm' | 'resistance' | 'watts' | 'strokeRate' | 'split' | 'rounds' | 'heartRate';
 export type CardioField = {
   key: 'duration' | 'distance' | 'weight' | 'reps' | CardioMetric;
   label: string;
@@ -9,6 +10,7 @@ export type CardioField = {
   max: number;
   clock?: boolean;
   optional?: boolean;
+  recording?: RecordingSettings;
 };
 const duration: CardioField = {
   key: 'duration',
@@ -141,7 +143,7 @@ const heartRate: CardioField = {
   max: 300,
   optional: true
 };
-export function cardioFields(name: string): CardioField[] {
+export function cardioFields(name: string, recording?:RecordingSettings): CardioField[] {
   let fields: CardioField[];
   if (/인클라인.*트레드밀|경사.*트레드밀/.test(name)) fields = [duration, distance, incline, elevation, calories, speed];else if (/트레드밀|러닝머신|런닝머신/.test(name)) fields = [duration, distance, calories, speed, {
     ...incline,
@@ -159,7 +161,19 @@ export function cardioFields(name: string): CardioField[] {
     ...calories,
     optional: true
   }];else if (/타바타|HIIT|인터벌/.test(name)) fields = [duration, rounds, calories];else fields = [duration, calories];
-  return [...fields, heartRate];
+  const all=[...fields,heartRate].map(field=>{
+    let f={...field};
+    if(recording&&f.key==='incline'){
+      if(recording.inclineUnit==='degree') f={...f,unit:'°',min:-10,max:45,step:.1};
+      if(recording.inclineUnit==='level') f={...f,key:'inclineLevel',label:'경사 레벨',unit:'레벨',min:0,max:1000,step:1};
+    }
+    if(recording&&f.key==='weight')f={...f,unit:recording.weightUnit,recording};
+    if(recording?.fieldOrder.length) f.optional=recording.hiddenFields.includes(f.key);
+    if(f.key==='duration')f.optional=false;
+    return f;
+  });
+  if(recording?.fieldOrder.length){const order=recording.fieldOrder;all.sort((a,b)=>(order.indexOf(a.key)<0?99:order.indexOf(a.key))-(order.indexOf(b.key)<0?99:order.indexOf(b.key)));}
+  return all;
 }
 export type CardioValues = {
   duration: number;
@@ -171,22 +185,28 @@ export type CardioValues = {
 export function cardioValue(set: CardioValues, field: CardioField): number | undefined {
   if (field.key === 'duration' || field.key === 'distance' || field.key === 'weight' || field.key === 'reps') {
     const value = set[field.key];
+    if(field.key==='weight'&&field.recording)return displayedWeight(value,field.recording);
     return field.key === 'distance' && field.unit === 'm' ? Math.round(value * 1000000) / 1000 : value;
   }
-  return set.metrics?.[field.key];
+  const value=set.metrics?.[field.key];
+  return field.key==='incline'&&field.unit==='°'&&value!==undefined ? Math.round(percentToDegrees(value)*100)/100 : value;
 }
 export function cardioPatch(field: CardioField, value: number | undefined): Partial<CardioValues> {
+  if(field.key==='weight'&&field.recording)return {weight:toStoredWeight(value??0,field.recording)};
   if (field.key === 'duration' || field.key === 'distance' || field.key === 'weight' || field.key === 'reps') return {
     [field.key]: field.key === 'distance' && field.unit === 'm' ? (value ?? 0) / 1000 : value ?? 0
   };
   return {
     metrics: {
-      [field.key]: value
+      [field.key]: value!==undefined&&field.key==='incline'&&field.unit==='°'?degreesToPercent(value):value
     }
   };
 }
-export function cardioSummary(name: string, set: CardioValues): string {
-  return cardioFields(name).flatMap(f => {
+export function cardioSummary(name: string, set: CardioValues, recording?:RecordingSettings): string {
+  const fields=cardioFields(name,recording);
+  if(set.metrics?.inclineLevel!==undefined&&!fields.some(f=>f.key==='inclineLevel'))fields.push({key:'inclineLevel',label:'경사 레벨',unit:'레벨',max:1000});
+  if(set.metrics?.incline!==undefined&&!fields.some(f=>f.key==='incline'))fields.push(incline);
+  return fields.flatMap(f => {
     const n = cardioValue(set, f);
     if (n === undefined || n === 0 && ['duration', 'distance', 'weight', 'reps'].includes(f.key)) return [];
     if (f.clock) return [`${f.label} ${Math.floor(n / 60).toString().padStart(2, '0')}:${Math.floor(n % 60).toString().padStart(2, '0')}${f.key === 'split' ? '/500m' : ''}`];
@@ -198,7 +218,7 @@ export function cardioSummary(name: string, set: CardioValues): string {
 /** A new interval carries settings, never totals from the preceding interval. */
 export function nextCardioInterval(previous?: CardioValues): Partial<CardioValues> {
   const metrics: Partial<Record<CardioMetric, number>> = {};
-  for (const key of ['speed', 'incline', 'resistance'] as const) if (previous?.metrics?.[key] !== undefined) metrics[key] = previous.metrics[key];
+  for (const key of ['speed', 'incline', 'inclineLevel', 'resistance'] as const) if (previous?.metrics?.[key] !== undefined) metrics[key] = previous.metrics[key];
   return {
     duration: 0,
     distance: 0,
@@ -210,7 +230,7 @@ export function nextCardioInterval(previous?: CardioValues): Partial<CardioValue
 export const CARDIO_CSV_FIELDS: {
   key: CardioMetric;
   header: string;
-}[] = [['calories', 'calories_kcal'], ['speed', 'speed_kmh'], ['incline', 'incline_percent'], ['elevationGain', 'elevation_gain_m'], ['steps', 'steps'], ['floors', 'floors'], ['rpm', 'rpm'], ['resistance', 'resistance_level'], ['watts', 'watts'], ['strokeRate', 'stroke_rate_spm'], ['split', 'split_seconds_per_500m'], ['rounds', 'rounds'], ['heartRate', 'average_heart_rate_bpm']].map(([key, header]) => ({
+}[] = [['calories', 'calories_kcal'], ['speed', 'speed_kmh'], ['incline', 'incline_percent'], ['inclineLevel','incline_level'], ['elevationGain', 'elevation_gain_m'], ['steps', 'steps'], ['floors', 'floors'], ['rpm', 'rpm'], ['resistance', 'resistance_level'], ['watts', 'watts'], ['strokeRate', 'stroke_rate_spm'], ['split', 'split_seconds_per_500m'], ['rounds', 'rounds'], ['heartRate', 'average_heart_rate_bpm']].map(([key, header]) => ({
   key: key as CardioMetric,
   header
 }));

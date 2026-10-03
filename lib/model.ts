@@ -1,6 +1,7 @@
 import legacy from './legacy-catalog.json';
 import { z } from 'zod';
 import { legacyCardioMetrics } from './legacy-cardio';
+import { recordingSettingsSchema, defaultRecording, type RecordingSettings } from './recording-settings';
 export const VERSION = 4;
 export const uid = () => crypto.randomUUID();
 const num = z.number().finite().min(0).max(1000000);
@@ -10,6 +11,7 @@ export const cardioMetricsSchema = z.object({
   speed: num.max(200).optional(),
   incline: z.number().finite().min(-20).max(100).optional(),
   elevationGain: num.optional(),
+  inclineLevel: num.max(1000).optional(),
   steps: num.int().optional(),
   floors: num.optional(),
   rpm: num.max(1000).optional(),
@@ -27,6 +29,7 @@ export const setSchema = z.object({
   duration: num,
   distance: num,
   metrics: cardioMetricsSchema.optional(),
+  target: z.object({weight:num,reps:num.int(),duration:num,distance:num}).optional(),
   done: z.boolean(),
   kind: z.enum(['work', 'warmup', 'drop']),
   rpe: z.number().min(0).max(10).default(0)
@@ -36,6 +39,7 @@ const exSchema = z.object({
   exerciseId: z.string(),
   name: z.string().max(160),
   equipmentId: z.string().default(''),
+  recording: recordingSettingsSchema.optional(),
   note: z.string().max(2000).default(''),
   rest: num.default(90),
   superset: z.string().default(''),
@@ -85,6 +89,7 @@ export const stateSchema = z.object({
       exerciseId: z.string(),
       setup: z.string().max(1000),
       step: z.number().min(.1).max(100),
+      recording: recordingSettingsSchema.optional(),
       updatedAt: timestamp
     })).max(500),
     updatedAt: timestamp
@@ -103,6 +108,8 @@ export const stateSchema = z.object({
     name: z.string().max(80),
     goalWeight: num.nullable(),
     weeklyTarget: z.number().int().min(1).max(7),
+    sessionView: z.enum(['focus','all']).optional(),
+    recordingPreferences: z.record(recordingSettingsSchema).optional(),
     gymId: z.string(),
     focus: z.array(z.string()),
     theme: z.enum(['dark', 'light']),
@@ -348,7 +355,7 @@ export function elapsed(s: Session, now = Date.now()) {
   return s.startedAt ? Math.max(0, Math.floor(((s.pausedAt || now) - s.startedAt - (s.pausedMs || 0)) / 1000)) : s.duration;
 }
 export function latestSets(state: AppState, id: string, equipmentId = '') {
-  for (const s of liveSessions(state)) {
+  for (const s of liveSessions(state).filter(s=>s.gymId===(state.draft?.gymId||state.profile.gymId)&&s.id!==state.draft?.id)) {
     const e = s.exercises.find(e => e.exerciseId === id && e.equipmentId === equipmentId);
     if (e?.sets.some(x => x.done && x.kind === 'work')) return e.sets.filter(x => x.done && x.kind === 'work');
   }
@@ -370,11 +377,11 @@ export function recommendation(state: AppState, id: string, equipmentId = '', lo
     action: '기준 만들기'
   };
   const last = sets[0];
-  const step = state.gyms.flatMap(g => g.equipment).find(e => e.id === equipmentId)?.step || ex?.step || 2.5;
+  const step = recordingFor(state,{exerciseId:id,equipmentId}).weightStep;
   const allHit = sets.every(s => s.weight === sets[0].weight && s.reps >= high && s.rpe > 0 && s.rpe <= 8);
   const assisted = ex?.type === 'assisted';
   return allHit ? {
-    weight: Math.max(0, Math.round((last.weight + (assisted ? -step : step)) * 100) / 100),
+    weight: Math.max(0, Math.round((last.weight + (assisted ? -step : step)) * 1000000) / 1000000),
     reps: low,
     reason: `최근 ${sets.length}세트가 ${high}회 이상 · RPE 8 이하. ${assisted ? '보조중량 감소' : '최소 단위 증량'} 후보예요.`,
     action: assisted ? '보조 줄이기' : '증량 제안'
@@ -384,6 +391,22 @@ export function recommendation(state: AppState, id: string, equipmentId = '', lo
     reason: sets.some(s => !s.rpe) ? '지난 중량 유지 · 운동 강도를 남기면 다음 제안이 더 정확해져요' : '지난 중량에서 목표 반복 범위를 채워보세요',
     action: '반복 쌓기'
   };
+}
+export function recordingFor(state:AppState, item:Pick<SessionExercise,'exerciseId'|'equipmentId'|'recording'>, gymId=state.draft?.gymId||state.profile.gymId):RecordingSettings {
+  if(item.recording) return item.recording;
+  const eq=state.gyms.find(g=>g.id===gymId)?.equipment.find(e=>e.id===item.equipmentId);
+  return eq?.recording || (!item.equipmentId ? state.profile.recordingPreferences?.[`${gymId}/${item.exerciseId}`] : undefined) || defaultRecording(exercise(item.exerciseId)?.equipment==='덤벨',eq?.step||exercise(item.exerciseId)?.step||2.5);
+}
+export function historicalRecording(item:Pick<SessionExercise,'exerciseId'|'recording'>):RecordingSettings {
+  return item.recording || defaultRecording(exercise(item.exerciseId)?.equipment==='덤벨');
+}
+export function preferredEquipment(state:AppState,exerciseId:string,gymId=state.profile.gymId):string {
+  const available=state.gyms.find(g=>g.id===gymId)?.equipment.filter(e=>e.exerciseId===exerciseId)||[];
+  for(const s of liveSessions(state).filter(s=>s.gymId===gymId)){
+    const row=s.exercises.find(e=>e.exerciseId===exerciseId);
+    if(row) return available.some(e=>e.id===row.equipmentId)?row.equipmentId:'';
+  }
+  return available.length===1?available[0].id:'';
 }
 export function startSession(state: AppState, routine?: Routine): Session {
   const now = Date.now();
@@ -400,12 +423,15 @@ export function startSession(state: AppState, routine?: Routine): Session {
     updatedAt: now,
     exercises: (routine?.exercises || []).map(e => {
       const x = exercise(e.exerciseId);
-      const rec = recommendation(state, e.exerciseId);
+      const equipmentId=preferredEquipment(state,e.exerciseId);
+      const recording=recordingFor(state,{exerciseId:e.exerciseId,equipmentId});
+      const rec = recommendation(state, e.exerciseId,equipmentId);
       return {
         id: uid(),
         exerciseId: e.exerciseId,
         name: x?.name || e.exerciseId,
-        equipmentId: '',
+        equipmentId,
+        recording,
         note: state.exerciseNotes[e.exerciseId] || '',
         rest: e.rest,
         superset: '',
@@ -414,7 +440,8 @@ export function startSession(state: AppState, routine?: Routine): Session {
         }, () => makeSet({
           weight: rec.weight || e.weight,
           reps: x?.type === 'cardio' ? 0 : e.reps,
-          duration: x?.type === 'time' ? 30 : 0
+          duration: x?.type === 'time' ? 30 : 0,
+          metrics: x?.type === 'cardio' ? {...recording.defaults} : {}
         }))
       };
     })

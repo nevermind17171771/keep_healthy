@@ -11,10 +11,15 @@ import { Progress } from '@/components/ui/progress';
 import { Toaster, toast } from 'sonner';
 import MuscleMap from '@/components/muscle-map';
 import CardioSets from '@/components/cardio-sets';
+import StrengthSets from '@/components/strength-sets';
+import FocusWorkout from '@/components/focus-workout';
+import RecordingEditor from '@/components/recording-editor';
+import { defaultRecording, weightText, displayedWeight, type RecordingSettings } from '@/lib/recording-settings';
+import { previousWorkSets, loadPreviousTargets, chooseEquipment } from '@/lib/session-actions';
 import { cardioSummary, nextCardioInterval, CARDIO_CSV_FIELDS } from '@/lib/cardio';
 import { shortsSearchUrl } from '@/lib/exercise-video';
 import { playRoundBell } from '@/lib/round-bell';
-import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recommendation, startSession, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry } from '@/lib/model';
+import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, recommendation, startSession, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
 import { useWorkout } from '@/lib/use-workout';
 import { download } from '@/lib/cache';
 const number = (v: number) => new Intl.NumberFormat('ko-KR', {
@@ -96,6 +101,7 @@ export default function WorkoutApp({
       id: string;
       created: string;
     }[]>([]);
+  const [recordingContext,setRecordingContext]=useState<{exerciseId:string;equipmentId:string;gymId:string;sessionId?:string}|null>(null);
   const [notesId, setNotesId] = useState(''),
     [quickText, setQuickText] = useState(''),
     [focusRoutine, setFocusRoutine] = useState(''),
@@ -219,12 +225,15 @@ export default function WorkoutApp({
     }
     change(s => {
       if (!s.draft) s.draft = startSession(s);
-      const rec = recommendation(s, id);
+      const equipmentId=preferredEquipment(s,id,s.draft.gymId);
+      const recording=recordingFor(s,{exerciseId:id,equipmentId},s.draft.gymId);
+      const rec = recommendation(s, id,equipmentId);
       const item = {
         id: uid(),
         exerciseId: id,
         name: ex.name,
-        equipmentId: '',
+        equipmentId,
+        recording,
         rest: 90,
         note: s.exerciseNotes[id] || '',
         superset: '',
@@ -233,7 +242,8 @@ export default function WorkoutApp({
         }, () => makeSet({
           weight: rec.weight,
           reps: ex.type === 'cardio' ? 0 : rec.reps,
-          duration: ex.type === 'time' ? 30 : 0
+          duration: ex.type === 'time' ? 30 : 0,
+          metrics: ex.type === 'cardio' ? {...recording.defaults} : {}
         }))
       };
       const i = s.draft.exercises.findIndex(e => e.id === swapId);
@@ -251,6 +261,20 @@ export default function WorkoutApp({
       s.draft.updatedAt = Date.now();
     }
   });
+  const patchSet=(eid:string,sid:string,patch:Partial<SetEntry>)=>changeDraft(s=>{const row=s.exercises.find(e=>e.id===eid)?.sets.find(x=>x.id===sid);if(row)Object.assign(row,patch);});
+  function openRecording(item:SessionExercise){setRecordingContext({exerciseId:item.exerciseId,equipmentId:item.equipmentId,gymId:draft!.gymId,sessionId:item.id});setModal('recording');}
+  function saveRecording(settings:RecordingSettings){if(!recordingContext)return;const c=recordingContext;const okay=change(s=>{
+    if(c.equipmentId){const gym=s.gyms.find(g=>g.id===c.gymId),eq=gym?.equipment.find(e=>e.id===c.equipmentId);if(eq){eq.recording=settings;eq.updatedAt=Date.now();gym!.updatedAt=Date.now();}}
+    else {s.profile.recordingPreferences||={};s.profile.recordingPreferences[`${c.gymId}/${c.exerciseId}`]=settings;s.profile.updatedAt=Date.now();}
+    const row=s.draft?.exercises.find(e=>e.id===c.sessionId);if(row){row.recording=settings;s.draft!.updatedAt=Date.now();}
+  });if(okay){setModal('');toast.success('입력 설정을 저장했어요. 다음 운동에도 적용돼요.');}}
+  function selectEquipment(item:SessionExercise,id:string){
+    if(item.sets.some(s=>s.done)){toast('완료한 세트가 있어요. 다른 기구는 운동을 새로 추가해서 기록해 주세요.');return;}
+    const apply=()=>change(s=>{const row=s.draft?.exercises.find(e=>e.id===item.id);if(row&&chooseEquipment(s,row,id))s.draft!.updatedAt=Date.now();});
+    if(item.sets.some(s=>s.weight||s.duration||s.distance||Object.keys(s.metrics||{}).length))setConfirm({title:'기구를 변경할까요?',detail:'현재 종목의 미완료 입력값과 목표를 비우고 선택한 기구의 설정을 적용해요.',action:apply});else apply();
+  }
+  function loadTargets(item:SessionExercise){const okay=change(s=>{const row=s.draft?.exercises.find(e=>e.id===item.id);if(row&&loadPreviousTargets(s,row))s.draft!.updatedAt=Date.now();});if(okay)toast.success('미완료 본세트에 목표를 표시했어요. 실제 수행값과 완료 여부는 직접 기록하세요.');}
+  function addSet(item:SessionExercise){changeDraft(s=>{const row=s.exercises.find(e=>e.id===item.id)!;const prev=row.sets.at(-1);row.sets.push(makeSet({...(exercise(row.exerciseId)?.type==='cardio'?nextCardioInterval(prev):prev),id:uid(),done:false,rpe:0,kind:'work',target:undefined}));});}
   function rest(seconds: number) {
     notified.current = false;
     setRestLength(seconds);
@@ -286,6 +310,7 @@ export default function WorkoutApp({
       return;
     }
     const saved = structuredClone(draft);
+    for(const item of saved.exercises)item.recording ||= recordingFor(state,item,saved.gymId);
     saved.name = saved.name.trim() || '나의 운동';
     saved.duration = elapsed(saved);
     delete saved.startedAt;
@@ -310,7 +335,7 @@ export default function WorkoutApp({
   };
   function exportCSV() {
     const cell = (v: unknown) => '"' + String(v ?? '').replace(/^[=+@-]/, "'$&").replaceAll('"', '""') + '"';
-    const rows = [['date', 'workout', 'exercise', 'equipment', 'set', 'type', 'weight_kg', 'reps', 'duration_seconds', 'distance_km', 'rpe', ...CARDIO_CSV_FIELDS.map(f => f.header)], ...sessions.flatMap(s => s.exercises.flatMap(e => e.sets.filter(x => x.done).map((x, i) => [s.date, s.name, e.name, e.equipmentId, i + 1, x.kind, x.weight, x.reps, x.duration, x.distance, x.rpe, ...CARDIO_CSV_FIELDS.map(f => x.metrics?.[f.key] ?? '')])))];
+    const rows = [['date', 'workout', 'exercise', 'equipment', 'set', 'type', 'weight_kg', 'reps', 'duration_seconds', 'distance_km', 'rpe', 'weight_display_value', 'weight_display_unit', 'weight_basis', 'incline_display_unit', ...CARDIO_CSV_FIELDS.map(f => f.header)], ...sessions.flatMap(s => s.exercises.flatMap(e => e.sets.filter(x => x.done).map((x, i) => [s.date, s.name, e.name, e.equipmentId, i + 1, x.kind, x.weight, x.reps, x.duration, x.distance, x.rpe, displayedWeight(x.weight,historicalRecording(e)), historicalRecording(e).weightUnit, historicalRecording(e).weightBasis, historicalRecording(e).inclineUnit, ...CARDIO_CSV_FIELDS.map(f => x.metrics?.[f.key] ?? '')])))];
     download('\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n'), `keep-healthy-${day()}.csv`, 'text/csv;charset=utf-8');
   }
   async function readImport(file?: File) {
@@ -522,10 +547,13 @@ export default function WorkoutApp({
               }
             })}>취소</button></div>
  {!draft.exercises.length && <Empty title="오늘 할 운동을 추가하세요" description="즐겨찾기나 초성 검색으로 빠르게 찾을 수 있어요." action={<button className="primary" onClick={() => openPicker()}><Plus size={18} />운동 선택</button>} />}
+ <div className="session-view-switch"><Tabs value={state.profile.sessionView||'focus'} onValueChange={v=>change(s=>{s.profile.sessionView=v as 'focus'|'all';s.profile.updatedAt=Date.now();})}><TabsList><TabsTrigger value="focus">집중 화면</TabsTrigger><TabsTrigger value="all">전체 운동</TabsTrigger></TabsList></Tabs></div>
+ {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} onSkipRest={()=>setRestEnd(0)} onExtendRest={()=>setRestEnd(v=>Math.max(v,Date.now())+30000)} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
  <div className="session-layout"><div className="session-exercises">{draft.exercises.map((e, ei) => {
                 const ex = exercise(e.exerciseId),
                   rec = recommendation(state, e.exerciseId, e.equipmentId),
-                  last = latestSets(state, e.exerciseId, e.equipmentId),
+                  last = previousWorkSets(state,e).sets,
+                  recording=recordingFor(state,e),
                   timed = ex?.type === 'time' || ex?.type === 'cardio',
                   eq = state.gyms.flatMap(g => g.equipment).find(x => x.id === e.equipmentId);
                 return <section className="panel session-card" key={e.id}><div className="exercise-heading"><button onClick={() => {
@@ -538,10 +566,7 @@ export default function WorkoutApp({
                       setSwapId('');
                       setModal('exercise');
                     }}><span className="exercise-number">{String(ei + 1).padStart(2, '0')}</span><div><h3>{e.name}</h3><p>{ex?.primaryLabels.join(' · ') || '직접 추가한 운동'}</p></div></button><button className="icon-button" aria-label={`${e.name} 교체`} onClick={() => openPicker('session', e.id)}><RotateCcw size={17} /></button></div>
- <div className="exercise-subbar"><NativeSelect aria-label={`${e.name} 기구`} value={e.equipmentId} onChange={ev => changeDraft(s => {
-                      const item = s.exercises[ei];
-                      item.equipmentId = ev.target.value;
-                    })}><option value="">기본 기록</option>{(state.gyms.find(g => g.id === draft.gymId) || activeGym)?.equipment.filter(x => x.exerciseId === e.exerciseId).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</NativeSelect><button className="text-button" onClick={() => {
+ <div className="exercise-subbar"><NativeSelect aria-label={`${e.name} 기구`} value={e.equipmentId} onChange={ev => selectEquipment(e,ev.target.value)}><option value="">기본 기록</option>{(state.gyms.find(g => g.id === draft.gymId) || activeGym)?.equipment.filter(x => x.exerciseId === e.exerciseId).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</NativeSelect><button className="text-button" onClick={()=>openRecording(e)}>입력 설정</button><button className="text-button" onClick={() => {
                       setNotesId(e.id);
                       setModal('notes');
                     }}>메모{e.note ? ' •' : ''}</button><a className="text-button video-link" href={shortsSearchUrl(e.name)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`${e.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={15} />쇼츠 검색</a>{ex?.type !== 'cardio' && <button className="text-button" onClick={() => changeDraft(s => {
@@ -552,7 +577,7 @@ export default function WorkoutApp({
                       }));
                     })}>+ 워밍업</button>}</div>
  {eq?.setup && <div className="equipment-note"><SlidersHorizontal size={14} />{eq.setup}</div>}{e.note && <p className="exercise-note">{e.note}</p>}
- {!timed && <div className="recommendation"><Sparkles size={14} /><span><b>{rec.action}</b> {rec.weight > 0 ? `${rec.weight}kg · ${rec.reps}회` : rec.reason}</span><button aria-label="추천 이유" className="icon-button" onClick={() => toast(rec.reason)}><Info size={14} /></button>{rec.weight > 0 && <button onClick={() => changeDraft(s => {
+ {!timed && <div className="recommendation"><Sparkles size={14} /><span><b>{rec.action}</b> {rec.weight > 0 ? `${weightText(rec.weight,recording)} · ${rec.reps}회` : rec.reason}</span><button aria-label="추천 이유" className="icon-button" onClick={() => toast(rec.reason)}><Info size={14} /></button>{rec.weight > 0 && <button onClick={() => changeDraft(s => {
                       s.exercises[ei].sets.forEach(x => {
                         if (!x.done && x.kind === 'work') {
                           x.weight = rec.weight;
@@ -560,25 +585,18 @@ export default function WorkoutApp({
                         }
                       });
                     })}>적용</button>}</div>}
- {ex?.type === 'cardio' ? <CardioSets name={e.name} sets={e.sets} onChange={(id, patch) => changeDraft(s => {
+ {ex?.type === 'cardio' ? <CardioSets name={e.name} sets={e.sets} recording={recording} onChange={(id, patch) => changeDraft(s => {
                     const set = s.exercises.find(x => x.id === e.id)!.sets.find(x => x.id === id)!;
                     Object.assign(set, patch);
-                  })} onComplete={id => toggleSet(e.id, id)} /> : <><div className={'set-head ' + (timed ? 'timed' : '')}><span>세트</span><span>{timed ? '시간 (분:초)' : ex?.type === 'assisted' ? '보조 kg' : ex?.type === 'bodyweight' ? '추가 kg' : ex?.equipment === '덤벨' ? '한쪽 kg' : 'kg'}</span><span>{timed ? '' : '횟수'}</span><span>RPE</span><span>완료</span></div>
- {e.sets.map((s, si) => <div className={'set-row ' + (s.done ? 'done ' : '') + (s.kind === 'warmup' ? 'warmup' : '')} key={s.id}><button className="set-kind" title="세트 유형 변경" aria-label={`${ei + 1}번 운동 ${si + 1}번 세트 유형`} onClick={() => updateSet(e.id, s.id, 'kind', s.kind === 'work' ? 'warmup' : s.kind === 'warmup' ? 'drop' : 'work')}>{s.kind === 'warmup' ? 'W' : s.kind === 'drop' ? 'D' : si + 1}</button>{timed ? <input className="set-input" aria-label={`${e.name} ${si + 1}세트 시간`} defaultValue={timeLabel(s.duration)} key={s.id + 'time'} inputMode="text" placeholder="00:00" onBlur={ev => {
-                        if (!/^\d{1,3}:[0-5]\d$/.test(ev.target.value)) {
-                          toast.error('시간을 20:30 형식으로 입력하세요.');
-                          ev.target.value = timeLabel(s.duration);
-                          return;
-                        }
-                        updateSet(e.id, s.id, 'duration', parseTime(ev.target.value));
-                      }} /> : <div className="weight-control"><button aria-label={`${e.name} ${si + 1}세트 중량 줄이기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.max(0, s.weight - (eq?.step || ex?.step || 2.5)))}>−</button><input className="set-input" type="number" min="0" step="0.5" inputMode="decimal" aria-label={`${e.name} ${si + 1}세트 중량`} value={s.weight || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, 'weight', Number(ev.target.value))} /><button aria-label={`${e.name} ${si + 1}세트 중량 늘리기`} onClick={() => updateSet(e.id, s.id, 'weight', Math.round((s.weight + (eq?.step || ex?.step || 2.5)) * 100) / 100)}>+</button></div>}
- {ex?.type === 'time' ? <span /> : <input className="set-input" type="number" min="0" inputMode="numeric" aria-label={`${e.name} ${si + 1}세트 횟수`} value={s.reps || ''} placeholder="0" onChange={ev => updateSet(e.id, s.id, 'reps', Number(ev.target.value))} />}
- <NativeSelect className="rpe-select" aria-label={`${e.name} ${si + 1}세트 RPE`} value={s.rpe} onChange={ev => updateSet(e.id, s.id, 'rpe', Number(ev.target.value))}><option value={0}>—</option>{[5, 6, 7, 8, 9, 10].map(r => <option key={r} value={r}>{r}</option>)}</NativeSelect><Checkbox className="set-check" aria-label={`${e.name} ${si + 1}세트 완료`} checked={s.done} onCheckedChange={() => toggleSet(e.id, s.id)} /></div>)}</>}
- {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => ex?.type === 'cardio' ? cardioSummary(e.name, s) : ex?.type === 'time' ? timeLabel(s.duration) : `${s.weight}kg × ${s.reps}회`).join(' / ')}</p></details>}
+                  })} onComplete={id => toggleSet(e.id, id)} /> : <StrengthSets name={e.name} type={ex?.type} sets={e.sets} previous={last} recording={recording} onChange={(id,p)=>patchSet(e.id,id,p)} onComplete={id=>toggleSet(e.id,id)}/>}
+ {last.length > 0 && <button className="text-button target-load" onClick={()=>loadTargets(e)}>지난 세트를 오늘 목표로</button>}
+ {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => ex?.type === 'cardio' ? cardioSummary(e.name, s,recording) : ex?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,recording)} × ${s.reps}회`).join(' / ')}</p></details>}
  <div className="set-footer"><button onClick={() => changeDraft(s => {
                       const prev = s.exercises[ei].sets.at(-1);
                       s.exercises[ei].sets.push(makeSet({
                         ...(ex?.type === 'cardio' ? nextCardioInterval(prev) : prev),
+                        target:undefined,
+                        rpe:0,
                         id: uid(),
                         done: false,
                         kind: 'work'
@@ -610,7 +628,7 @@ export default function WorkoutApp({
                     })}><Link2 size={14} />{e.superset ? '슈퍼세트 연결됨' : '다음 종목과 슈퍼세트'}</button>}</div>}</section>;
               })}<button className="add-workout" onClick={() => openPicker()}><Plus size={19} />운동 추가</button></div><aside className="session-side"><section className="panel"><div className="section-title"><h3>오늘의 타겟</h3><span>{draft.exercises.length}개 종목</span></div><MuscleMap primary={plannedMuscles} secondary={plannedSecondary} compact /><div className="target-labels">{plannedMuscles.map(m => <span key={m}>{MUSCLES[m]}</span>)}</div></section><section className="panel"><h3>오늘의 컨디션</h3><div className="condition-buttons">{['가벼움', '보통', '피곤함'].map(c => <button className={draft.condition === c ? 'selected' : ''} onClick={() => changeDraft(s => {
                     s.condition = c;
-                  })} key={c}>{c}</button>)}</div><p className="micro">RPE 7: 약 3회, 8: 약 2회, 9: 약 1회 더 할 수 있는 느낌. 선택 입력이에요.</p></section></aside></div></>}
+                  })} key={c}>{c}</button>)}</div><p className="micro">RPE 7: 약 3회, 8: 약 2회, 9: 약 1회 더 할 수 있는 느낌. 선택 입력이에요.</p></section></aside></div></>}</>}
  {page === 'history' && <><div className="page-heading"><div><p className="eyebrow">YOUR TRAINING LOG</p><h1>쌓여가는 기록<span className="red-dot">.</span></h1><p className="subtext">총 {sessions.length}번의 운동. 하나씩, 꾸준하게.</p></div><button className="primary" onClick={() => start(undefined, true)}><Plus size={18} />과거 운동 기록</button></div><div className="filter-row"><input type="date" aria-label="운동 날짜 필터" value={recordFilter} onChange={e => setRecordFilter(e.target.value)} />{recordFilter && <button className="text-button" onClick={() => setRecordFilter('')}>전체 보기</button>}<span className="spacer" /><button className="secondary" onClick={exportCSV}><Download size={16} />CSV</button></div><section className="panel">{sessions.filter(s => !recordFilter || day(s.date) === recordFilter).length ? sessions.filter(s => !recordFilter || day(s.date) === recordFilter).map(sessionRow) : <Empty title="아직 기록이 없어요" description="선택한 날짜의 운동을 추가하거나 전체 기록을 확인하세요." />}</section></>}
  {page === 'routines' && <><div className="page-heading"><div><p className="eyebrow">BUILD YOUR CONSISTENCY</p><h1>나의 루틴<span className="red-dot">.</span></h1><p className="subtext">내 시간과 운동 환경에 맞게 조절하세요.</p></div><button className="primary" onClick={() => {
               setEditRoutine({
@@ -682,7 +700,7 @@ export default function WorkoutApp({
                 })}><option value="dark">다크</option><option value="light">라이트</option></NativeSelect></Field><p className="micro">목표 체중은 실제 측정 기록에 반영되지 않아요.</p></section><section className="panel"><div className="section-title"><h3>내 헬스장과 기구</h3><button className="text-button" onClick={() => setModal('gym')}><Plus size={15} />헬스장</button></div><Field label="현재 운동 장소"><NativeSelect value={state.profile.gymId} onChange={e => change(s => {
                   s.profile.gymId = e.target.value;
                   s.profile.updatedAt = Date.now();
-                })}>{state.gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</NativeSelect></Field><p className="micro">같은 운동도 기구마다 무게가 다를 수 있어요. 기구를 등록하고 좌석 번호·그립·최소 중량 단위를 남기세요.</p>{activeGym?.equipment.map(e => <div className="equipment-row" key={e.id}><Dumbbell size={18} /><div><strong>{e.name}</strong><small>{exercise(e.exerciseId)?.name} · 증량 {e.step}kg</small><p>{e.setup}</p></div></div>)}<button className="secondary full" onClick={() => setModal('equipment')}><Plus size={16} />기구 등록</button></section><section className="panel"><div className="section-title"><h3>데이터와 백업</h3><ShieldCheck size={20} /></div><p className="subtext">이 기기의 임시 저장본과 계정의 저장본을 함께 관리해요. 다른 기기의 변경과 충돌하면 백업 후 합칠 수 있어요.</p><div className="backup-actions"><button className="secondary" onClick={exportJSON}><Download size={18} />JSON 백업</button><button className="secondary" onClick={() => fileRef.current?.click()}><Upload size={18} />기록 가져오기</button><button className="secondary" onClick={exportCSV}><Download size={18} />CSV 내보내기</button><button className="secondary" onClick={() => void sync()}><Cloud size={18} />지금 동기화</button></div><p className="micro">기존 앱의 설정 → JSON 백업 파일을 가져오세요. 원본 내용도 함께 보관하고 중복된 운동 ID는 합쳐요.</p>{error?.includes('로그인') && <a className="primary" href="/signin-with-chatgpt?return_to=%2F" target="_top">로그인하고 동기화</a>}<button className="text-button" onClick={async () => {
+                })}>{state.gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</NativeSelect></Field><p className="micro">같은 운동도 기구마다 무게가 다를 수 있어요. 기구를 등록하고 좌석 번호·그립·최소 중량 단위를 남기세요.</p>{activeGym?.equipment.map(e => <div className="equipment-row" key={e.id}><Dumbbell size={18} /><div><strong>{e.name}</strong><small>{exercise(e.exerciseId)?.name}</small><p>{e.setup}</p></div><button className="secondary" onClick={()=>{setRecordingContext({exerciseId:e.exerciseId,equipmentId:e.id,gymId:activeGym!.id});setModal('recording');}}>입력 설정</button></div>)}<button className="secondary full" onClick={() => setModal('equipment')}><Plus size={16} />기구 등록</button></section><section className="panel"><div className="section-title"><h3>데이터와 백업</h3><ShieldCheck size={20} /></div><p className="subtext">이 기기의 임시 저장본과 계정의 저장본을 함께 관리해요. 다른 기기의 변경과 충돌하면 백업 후 합칠 수 있어요.</p><div className="backup-actions"><button className="secondary" onClick={exportJSON}><Download size={18} />JSON 백업</button><button className="secondary" onClick={() => fileRef.current?.click()}><Upload size={18} />기록 가져오기</button><button className="secondary" onClick={exportCSV}><Download size={18} />CSV 내보내기</button><button className="secondary" onClick={() => void sync()}><Cloud size={18} />지금 동기화</button></div><p className="micro">기존 앱의 설정 → JSON 백업 파일을 가져오세요. 원본 내용도 함께 보관하고 중복된 운동 ID는 합쳐요.</p>{error?.includes('로그인') && <a className="primary" href="/signin-with-chatgpt?return_to=%2F" target="_top">로그인하고 동기화</a>}<button className="text-button" onClick={async () => {
                 try {
                   const r = await fetch('/api/sync?backups=1', {
                     cache: 'no-store'
@@ -726,7 +744,7 @@ export default function WorkoutApp({
                   } catch {
                     toast.error('소리를 재생할 수 없어요. 기기와 브라우저 설정을 확인해 주세요.');
                   }
-                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.1 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
+                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.2 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
  {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
@@ -738,6 +756,7 @@ export default function WorkoutApp({
             body: '신체 기록',
             gym: '헬스장 추가',
             equipment: '기구 등록',
+            recording:'기구별 입력 설정',
             notes: '운동 메모',
             quick: '빠른 세트 입력',
             finish: '운동 마무리',
@@ -849,6 +868,7 @@ export default function WorkoutApp({
           });
           setModal('');
         }}><Field label="헬스장 이름"><input name="name" required maxLength={100} placeholder="예: 회사 근처 헬스장" /></Field><button type="submit" className="primary full">추가</button></form>}
+ {modal==='recording'&&recordingContext&&<RecordingEditor key={`${recordingContext.gymId}/${recordingContext.equipmentId}/${recordingContext.exerciseId}`} name={exercise(recordingContext.exerciseId)?.name||'내 운동'} cardio={exercise(recordingContext.exerciseId)?.type==='cardio'} dumbbell={exercise(recordingContext.exerciseId)?.equipment==='덤벨'} value={recordingFor(state,{exerciseId:recordingContext.exerciseId,equipmentId:recordingContext.equipmentId,recording:draft?.exercises.find(e=>e.id===recordingContext.sessionId)?.recording},recordingContext.gymId)} onSave={saveRecording}/>}
  {modal === 'equipment' && <form onSubmit={e => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -866,7 +886,7 @@ export default function WorkoutApp({
           });
           setModal('');
           toast.success('기구를 등록했어요. 운동 중 기구를 선택해 주세요.');
-        }}><Field label="기구 이름"><input name="name" required maxLength={100} placeholder="예: 해머 체스트 프레스 1번" /></Field><Field label="연결할 운동"><NativeSelect name="exercise" defaultValue={selected}>{EXERCISES.filter(e => e.type === 'weight' || e.type === 'assisted').map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect></Field><Field label="좌석·그립·기구 세팅"><textarea name="setup" maxLength={1000} placeholder="좌석 4, 등받이 2, 손잡이 가슴 중앙" /></Field><Field label="최소 중량 변경 단위 (kg)"><input name="step" type="number" min="0.1" max="100" step="0.1" defaultValue="2.5" required /></Field><button type="submit" className="primary full">기구 저장</button></form>}
+        }}><Field label="기구 이름"><input name="name" required maxLength={100} placeholder="예: 해머 체스트 프레스 1번" /></Field><Field label="연결할 운동"><NativeSelect name="exercise" defaultValue={selected}>{EXERCISES.filter(e => e.type !== 'time').map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect></Field><Field label="좌석·그립·기구 세팅"><textarea name="setup" maxLength={1000} placeholder="좌석 4, 등받이 2, 손잡이 가슴 중앙" /></Field><Field label="최소 중량 변경 단위 (kg)"><input name="step" type="number" min="0.1" max="100" step="0.1" defaultValue="2.5" required /></Field><button type="submit" className="primary full">기구 저장</button></form>}
  {modal === 'notes' && <form onSubmit={e => {
           e.preventDefault();
           const f = new FormData(e.currentTarget),
@@ -893,7 +913,7 @@ export default function WorkoutApp({
             })} /></Field>}<div className="finish-stats"><div><b>{completedSets(draft)}</b><span>완료 본세트</span></div><div><b>{Math.round(elapsed(draft, now) / 60)}</b><span>운동 시간 (분)</span></div><div><b>{number(volume(draft))}</b><span>중량 볼륨 (kg)</span></div></div><Field label="오늘의 한 줄"><textarea maxLength={4000} placeholder="오늘 잘한 점이나 다음에 신경 쓸 점" value={draft.note} onChange={e => changeDraft(s => {
               s.note = e.target.value;
             })} /></Field><p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
- {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? cardioSummary(e.name, s) : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${s.weight}kg × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
+ {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? cardioSummary(e.name, s,historicalRecording(e)) : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,historicalRecording(e))} × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
               title: '운동 기록을 삭제할까요?',
               detail: '설정 → 삭제한 운동에서 복원할 수 있어요.',
               action: () => {
@@ -911,6 +931,7 @@ export default function WorkoutApp({
               }
               change(s => {
                 s.draft = structuredClone(detailSession);
+                for(const item of s.draft.exercises)item.recording ||= historicalRecording(item);
                 delete s.draft.startedAt;
               });
               setModal('');

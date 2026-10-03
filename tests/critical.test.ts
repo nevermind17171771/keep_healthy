@@ -104,3 +104,58 @@ test('round bell audio has three distinct strikes, no clipping, and a quiet tail
  }
  assert.throws(()=>boxingBellSamples(NaN));assert.throws(()=>boxingBellSamples(0));
 });
+
+import {defaultRecording,recordingSettingsSchema,toStoredWeight,displayedWeight,percentToDegrees,degreesToPercent} from '../lib/recording-settings';
+import {recordingFor,historicalRecording,preferredEquipment} from '../lib/model';
+import {previousWorkSets,loadPreviousTargets,chooseEquipment} from '../lib/session-actions';
+test('kg/lb and dumbbell one-side/pair displays preserve canonical weight and volume',()=>{
+ const one=defaultRecording(true),pair={...one,weightBasis:'pair' as const},lbs={...one,weightUnit:'lb' as const};
+ assert.equal(toStoredWeight(40,pair),20);assert.equal(displayedWeight(20,pair),40);assert.equal(displayedWeight(20,one),20);
+ assert.ok(Math.abs(toStoredWeight(50,lbs)-22.6796185)<.000001);assert.equal(displayedWeight(toStoredWeight(50,lbs),lbs),50);
+ const a=saved('덤벨 벤치프레스',20,10),b=saved('덤벨 벤치프레스',toStoredWeight(40,pair),10);b.sessions[0].exercises[0].recording=pair;assert.equal(volume(a.sessions[0]),volume(b.sessions[0]));
+});
+test('degrees convert to percent while machine levels remain independent measurements',()=>{
+ const degrees={...defaultRecording(),inclineUnit:'degree' as const},level={...defaultRecording(),inclineUnit:'level' as const};
+ const angle=cardioFields('인클라인 트레드밀 워크',degrees).find(f=>f.key==='incline')!;
+ const patch=cardioPatch(angle,15);assert.ok(Math.abs(patch.metrics!.incline!-26.794919)<.00001);assert.equal(cardioValue(makeSet(patch),angle),15);assert.equal(angle.unit,'°');
+ const levels=cardioFields('인클라인 트레드밀 워크',level).find(f=>f.key==='inclineLevel')!;assert.deepEqual(cardioPatch(levels,15),{metrics:{inclineLevel:15}});
+ assert.ok(Math.abs(percentToDegrees(degreesToPercent(15))-15)<.000001);
+ assert.match(cardioSummary('인클라인 트레드밀 워크',makeSet({metrics:{incline:10,inclineLevel:8}}),level),/경사 레벨 8레벨.*경사 10%/);
+});
+test('recording preferences reorder visible cardio fields without erasing optional recorded values',()=>{
+ const settings={...defaultRecording(),fieldOrder:['incline','speed','duration','distance','calories','elevationGain','heartRate'] as const,hiddenFields:['calories'] as const};
+ const parsed=recordingSettingsSchema.parse(settings),fields=cardioFields('인클라인 트레드밀 워크',parsed);
+ assert.deepEqual(fields.slice(0,3).map(f=>f.key),['incline','speed','duration']);assert.equal(fields.find(f=>f.key==='calories')!.optional,true);
+ const row=makeSet({metrics:{calories:128}});assert.match(cardioSummary('인클라인 트레드밀 워크',row,parsed),/칼로리 128kcal/);assert.deepEqual(row.metrics,{calories:128});
+ assert.equal(recordingSettingsSchema.safeParse({...parsed,weightStep:0}).success,false);
+});
+test('new workouts use saved machine defaults and snapshot settings without changing historical display',()=>{
+ const state=saved('인클라인 트레드밀 워크');const id=find('인클라인 트레드밀 워크').id,settings={...defaultRecording(),inclineUnit:'level' as const,defaults:{speed:5,inclineLevel:12}};
+ state.gyms[0].equipment.push({id:'my-mountain',name:'마이마운틴',exerciseId:id,setup:'',step:2.5,recording:settings,updatedAt:1});state.sessions[0].exercises[0].equipmentId='my-mountain';
+ assert.equal(preferredEquipment(state,id),'my-mountain');const routine={id:'cardio-routine',name:'유산소',updatedAt:1,exercises:[{exerciseId:id,sets:1,reps:10,repMax:12,weight:0,rest:60}]};
+ const draft=startSession(state,routine),item=draft.exercises[0];assert.equal(item.equipmentId,'my-mountain');assert.deepEqual(item.sets[0].metrics,{speed:5,inclineLevel:12});assert.equal(item.sets[0].duration,0);assert.equal(item.sets[0].done,false);
+ assert.equal(historicalRecording(state.sessions[0].exercises[0]).inclineUnit,'percent');
+ const restored=migrate(JSON.parse(JSON.stringify({...state,draft})));assert.equal(restored.draft!.exercises[0].recording?.inclineUnit,'level');assert.equal(stateSchema.safeParse(restored).success,true);
+});
+test('previous goals match each work set and preserve completed sets and actual values',()=>{
+ const state=saved();state.sessions[0].exercises[0].sets=[makeSet({weight:40,reps:12,done:true}),makeSet({weight:40,reps:11,done:true}),makeSet({weight:40,reps:10,done:true})];
+ state.draft=startSession(state);const item=structuredClone(state.sessions[0].exercises[0]);item.id='today';item.sets=[makeSet({weight:20,reps:10,kind:'warmup',done:true}),makeSet({weight:45,reps:9,done:true}),makeSet({weight:42.5,reps:8})];state.draft.exercises=[item];
+ assert.equal(loadPreviousTargets(state,item),true);assert.equal(item.sets[0].target,undefined);assert.equal(item.sets[1].weight,45);assert.equal(item.sets[1].target,undefined);assert.equal(item.sets[2].target!.reps,11);assert.equal(item.sets[2].weight,42.5);assert.equal(item.sets[2].reps,8);assert.equal(item.sets[3].target!.reps,10);assert.equal(item.sets[3].done,false);assert.equal(item.sets[3].weight,0);
+});
+test('history comparison excludes another gym, another machine, and the workout being edited',()=>{
+ const state=saved(),old=state.sessions[0];state.draft=startSession(state);const item=structuredClone(old.exercises[0]);state.draft.exercises=[item];
+ assert.equal(previousWorkSets(state,item).sets.length,1);item.equipmentId='other';assert.equal(previousWorkSets(state,item).sets.length,0);item.equipmentId='';state.draft.gymId='other-gym';assert.equal(previousWorkSets(state,item).sets.length,0);state.draft.gymId=old.gymId;state.draft.id=old.id;assert.equal(previousWorkSets(state,item).sets.length,0);
+});
+test('machine changes clear uncompleted readings but cannot relabel completed sets',()=>{
+ const state=saved('트레드밀');state.draft=startSession(state);const item=structuredClone(state.sessions[0].exercises[0]);state.draft.exercises=[item];
+ assert.equal(chooseEquipment(state,item,'new'),false);assert.equal(item.equipmentId,'');item.sets[0].done=false;item.sets[0].metrics={calories:100};assert.equal(chooseEquipment(state,item,'new'),true);assert.equal(item.sets[0].weight,0);assert.deepEqual(item.sets[0].metrics,{});assert.equal(item.sets[0].done,false);
+});
+test('API preserves new settings and targets from old clients but accepts explicit modern resets',async()=>{
+ const db=database();try{const state=saved('인클라인 트레드밀 워크'),settings={...defaultRecording(),inclineUnit:'level' as const};state.profile.sessionView='focus';state.profile.recordingPreferences={test:settings};const row=state.sessions[0].exercises[0];row.recording=settings;row.sets[0].metrics={calories:123,inclineLevel:8};row.sets[0].target={weight:0,reps:0,duration:1200,distance:2};
+ assert.equal((await PUT(req('units-user',{state,revision:0,clientSchema:2}))).status,200);
+ const old=structuredClone(state);delete old.profile.sessionView;delete old.profile.recordingPreferences;delete old.sessions[0].exercises[0].recording;delete old.sessions[0].exercises[0].sets[0].metrics!.inclineLevel;delete old.sessions[0].exercises[0].sets[0].target;
+ assert.equal((await PUT(req('units-user',{state:old,revision:1}))).status,200);
+ const persisted=await(await GET(req('units-user'))).json() as any;assert.equal(persisted.state.sessions[0].exercises[0].recording.inclineUnit,'level');assert.equal(persisted.state.sessions[0].exercises[0].sets[0].metrics.inclineLevel,8);assert.equal(persisted.state.sessions[0].exercises[0].sets[0].target.duration,1200);assert.equal(persisted.state.profile.sessionView,'focus');
+ persisted.state.sessions[0].exercises[0].sets[0].metrics={};delete persisted.state.sessions[0].exercises[0].sets[0].target;assert.equal((await PUT(req('units-user',{state:persisted.state,revision:2,clientSchema:2}))).status,200);const cleared=await(await GET(req('units-user'))).json() as any;assert.deepEqual(cleared.state.sessions[0].exercises[0].sets[0].metrics,{});assert.equal(cleared.state.sessions[0].exercises[0].sets[0].target,undefined);
+ }finally{db.close();}
+});

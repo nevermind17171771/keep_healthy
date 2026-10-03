@@ -99,7 +99,8 @@ export function useWorkout() {
           },
           body: JSON.stringify({
             state: current.current,
-            revision: revision.current
+            revision: revision.current,
+            clientSchema: 2
           })
         });
         if (r.status === 409) {
