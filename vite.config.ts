@@ -12,6 +12,7 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
+  send_metrics: false,
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
@@ -36,6 +37,8 @@ const localBindingConfig = {
 export default defineConfig(async () => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
+  process.env.WRANGLER_SEND_METRICS = "false";
+  process.env.NEXT_TELEMETRY_DISABLED = "1";
   process.env.WRANGLER_WRITE_LOGS ??= "false";
   process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
@@ -55,6 +58,8 @@ export default defineConfig(async () => {
       vinext(),
       sites(),
       cloudflare({
+        // Development/build uses only local bindings, never a remote proxy session.
+        remoteBindings: false,
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
         config: localBindingConfig,

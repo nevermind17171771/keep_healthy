@@ -159,3 +159,40 @@ test('API preserves new settings and targets from old clients but accepts explic
  persisted.state.sessions[0].exercises[0].sets[0].metrics={};delete persisted.state.sessions[0].exercises[0].sets[0].target;assert.equal((await PUT(req('units-user',{state:persisted.state,revision:2,clientSchema:2}))).status,200);const cleared=await(await GET(req('units-user'))).json() as any;assert.deepEqual(cleared.state.sessions[0].exercises[0].sets[0].metrics,{});assert.equal(cleared.state.sessions[0].exercises[0].sets[0].target,undefined);
  }finally{db.close();}
 });
+
+import {PROGRAMS,programRoutines,planVolume,routineWarnings,importProgram} from '../lib/programs';
+import {ALTERNATIVE_GROUPS} from '../lib/program-data';
+test('all reviewed programs and alternatives resolve to catalog exercises with valid ranges',()=>{
+ for(const p of PROGRAMS)for(const mode of ['standard','short','easy'] as const){const rs=programRoutines(p,mode);const s=defaultState();s.routines=rs;assert.ok(stateSchema.safeParse(s).success);for(const r of rs)for(const e of r.exercises){assert.ok(exercise(e.exerciseId));assert.ok(e.repMax>=e.reps);assert.equal(e.weight,0);assert.ok(e.rest>=90);}assert.ok(p.week.every(i=>i===-1||!!rs[i]));}
+ for(const group of ALTERNATIVE_GROUPS)for(const name of group)assert.ok(exercise(name),name);
+});
+test('program import preserves custom routines and schedule unless replacement is selected',()=>{
+ const s=defaultState(),before=structuredClone(s),p=PROGRAMS[0],rs=programRoutines(p);
+ assert.equal(importProgram(s,rs,p.week,false),true);assert.deepEqual(s.routines.slice(0,before.routines.length),before.routines);assert.deepEqual(s.profile.weekPlan,before.profile.weekPlan);
+ assert.equal(importProgram(s,rs,p.week,true),false);assert.deepEqual(s.profile.weekPlan,before.profile.weekPlan);
+ const other=programRoutines(PROGRAMS[1]);assert.equal(importProgram(s,other,PROGRAMS[1].week,true),true);assert.equal(s.profile.weekPlan.mon,other[0].id);assert.equal(s.profile.weekPlan.tue,'');
+ s.routines.at(-1)!.exercises[0].weight=99;assert.equal(other.at(-1)!.exercises[0].weight,0);
+});
+test('weekly volume counts scheduled occurrences and keeps support separate',()=>{
+ const r=programRoutines(PROGRAMS[0])[0];r.exercises=r.exercises.slice(0,1);
+ const e=exercise(r.exercises[0].exerciseId)!;const v=planVolume([r],[0,-1,0]);for(const m of e.primary)assert.equal(v.find(x=>x.muscle===m)?.direct,6);for(const m of e.secondary){assert.equal(v.find(x=>x.muscle===m)?.support,6);assert.equal(v.find(x=>x.muscle===m)?.direct,0);}
+});
+test('short and easy variants reduce work without shortening prescribed rest or mutating source',()=>{
+ const p=PROGRAMS[0],before=JSON.stringify(p),full=programRoutines(p),short=programRoutines(p,'short'),easy=programRoutines(p,'easy');
+ assert.equal(JSON.stringify(p),before);for(let i=0;i<full.length;i++){assert.ok(short[i].exercises.length<=3);assert.ok(easy[i].exercises.every(e=>e.sets===2&&e.effortCap===7));for(const e of short[i].exercises)assert.equal(e.rest,full[i].exercises.find(x=>x.exerciseId===e.exerciseId)!.rest);}
+});
+test('routine review identifies triceps pre-fatigue and overlapping unsupported hinges',()=>{
+ const r=programRoutines(PROGRAMS[0])[0],entry=r.exercises[0];r.exercises=[{...entry,exerciseId:exercise('케이블 로프 푸시다운')!.id},{...entry,exerciseId:exercise('머신 체스트 프레스')!.id}];assert.ok(routineWarnings(r).some(x=>x.includes('피로')));
+ r.exercises=[{...entry,exerciseId:exercise('바벨 루마니안 데드리프트')!.id},{...entry,exerciseId:exercise('바벨 로우')!.id}];assert.ok(routineWarnings(r).some(x=>x.includes('허리')));
+});
+test('routine rep ranges drive progression and are saved in the workout snapshot',()=>{
+ const s=saved('머신 체스트 프레스',40,15);const r=programRoutines(PROGRAMS[0])[0];r.exercises=[{...r.exercises[1],reps:12,repMax:15}];const session=startSession(s,r);assert.equal(session.exercises[0].repMin,12);assert.equal(session.exercises[0].repMax,15);assert.equal(session.exercises[0].sets[0].weight,42.5);
+ s.sessions[0].exercises[0].sets[0].reps=12;assert.equal(startSession(s,r).exercises[0].sets[0].weight,40);
+ r.exercises[0].effortCap=7;assert.equal(startSession(s,r).exercises[0].sets[0].weight,0);
+});
+test('legacy writes preserve workout targets and routine effort caps',()=>{
+ const old=defaultState(),r=programRoutines(PROGRAMS[0])[0];old.routines=[r];old.draft=startSession(old,r);const incoming=structuredClone(old);delete incoming.draft!.exercises[0].repMin;delete incoming.draft!.exercises[0].repMax;delete incoming.draft!.exercises[0].effortCap;delete incoming.routines[0].exercises[0].effortCap;preserveMissingMetrics(incoming,old,false);assert.equal(incoming.draft!.exercises[0].repMax,12);assert.equal(incoming.routines[0].exercises[0].effortCap,8);
+});
+test('revised defaults avoid late shoulder presses, unsupported row after hinge and unauthenticated athlete names',()=>{
+ const rs=defaultState().routines;assert.equal(rs.length,15);assert.ok(rs.every(r=>!r.name.includes('CBum')));const shoulder=rs.find(r=>r.name==='어깨 특화 · 기본')!;assert.equal(exercise(shoulder.exercises[0].exerciseId)?.name,'머신 숄더 프레스');assert.ok(shoulder.exercises.reduce((n,e)=>n+e.sets,0)<=12);const full=rs.find(r=>r.name==='Full Body B — 근성장')!;assert.ok(full.exercises.some(e=>exercise(e.exerciseId)?.name==='체스트 서포티드 로우'));
+});

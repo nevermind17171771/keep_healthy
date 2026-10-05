@@ -1,4 +1,7 @@
 'use client';
+import ProgramLibrary, {RoutineReview} from '@/components/program-library';
+import {importProgram} from '@/lib/programs';
+import {alternatives} from '@/lib/program-data';
 
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, BookOpen, CalendarDays, Check, CheckCheck, ChevronRight, Cloud, CloudOff, Copy, Download, Dumbbell, Flame, Heart, History, House, Info, Link2, Minus, MoreHorizontal, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Star, Timer, Trash2, Upload, Video, Volume2, X } from 'lucide-react';
@@ -116,7 +119,8 @@ export default function WorkoutApp({
     selectedEx = exercise(selected) || EXERCISES[0],
     activeGym = state.gyms.find(g => g.id === state.profile.gymId) || state.gyms[0];
   const todayKey = weekKeys[(new Date(day() + 'T12:00:00Z').getUTCDay() + 6) % 7];
-  const planned = routines.find(r => r.id === (focusRoutine || state.profile.weekPlan[todayKey])) || routines.find(r => /Push|푸시|가슴/.test(r.name)) || routines[0];
+  const plannedRest = !focusRoutine && Object.prototype.hasOwnProperty.call(state.profile.weekPlan,todayKey) && !state.profile.weekPlan[todayKey];
+  const planned = plannedRest ? undefined : routines.find(r => r.id === (focusRoutine || state.profile.weekPlan[todayKey])) || routines.find(r => /Push|푸시|가슴/.test(r.name)) || routines[0];
   const plannedMuscles = [...new Set((draft?.exercises || planned?.exercises || []).flatMap(e => exercise(e.exerciseId)?.primary || []))];
   const plannedSecondary = [...new Set((draft?.exercises || planned?.exercises || []).flatMap(e => exercise(e.exerciseId)?.secondary || []))].filter(x => !plannedMuscles.includes(x));
   const weekStart = useMemo(() => {
@@ -208,6 +212,7 @@ export default function WorkoutApp({
   function addExercise(id: string) {
     const ex = exercise(id);
     if (!ex) return;
+    if (swapId&&draft?.exercises.find(e=>e.id===swapId)?.sets.some(s=>s.done))toast('완료한 기록은 남기고 대체 운동을 새 종목으로 추가해요.');
     if (pickerFor === 'routine' && page === 'routines') {
       setEditRoutine(r => r ? {
         ...r,
@@ -247,7 +252,7 @@ export default function WorkoutApp({
         }))
       };
       const i = s.draft.exercises.findIndex(e => e.id === swapId);
-      if (i >= 0) s.draft.exercises[i] = item;else s.draft.exercises.push(item);
+      if (i >= 0 && !s.draft.exercises[i].sets.some(x=>x.done)) {const old=s.draft.exercises[i];Object.assign(item,{repMin:old.repMin,repMax:old.repMax,effortCap:old.effortCap,rest:old.rest});item.sets=Array.from({length:old.sets.length},()=>makeSet({reps:old.repMin||10}));s.draft.exercises[i]=item;}else s.draft.exercises.push(item);
       s.draft.updatedAt = Date.now();
     });
     setSelected(id);
@@ -352,6 +357,7 @@ export default function WorkoutApp({
     }
   }
   function saveRoutine() {
+    if (editRoutine?.exercises.some(e=>e.repMax<e.reps)){toast.error('최대 목표 횟수는 최소 목표 이상이어야 해요.');return;}
     if (!editRoutine?.name.trim() || !editRoutine.exercises.length) {
       toast.error('루틴 이름과 운동을 추가해 주세요.');
       return;
@@ -508,7 +514,7 @@ export default function WorkoutApp({
                   weekday: 'long',
                   timeZone: 'Asia/Seoul'
                 })}</p><h1>오늘의 운동<span className="red-dot">.</span></h1><p className="subtext">오늘의 기록이 다음 운동의 기준이 되도록.</p></div><button className="secondary" onClick={() => start()}><Plus size={18} />자유 운동</button></div>
- <div className="dashboard-grid"><div className="dashboard-left"><section className="workout-feature"><div className="row between"><span className="kicker">MY NEXT SESSION</span><span className="outline-pill"><Dumbbell size={14} />{activeGym?.name}</span></div><h2>{draft?.name || planned?.name || '나만의 운동'}</h2><p>{draft ? '진행 중인 운동을 이어가세요.' : `${planned?.exercises.length || 0}개 종목 · 중량은 내 기록에 맞춰`}</p><div className="focus-chips">{[...new Set((planned?.exercises || []).map(e => exercise(e.exerciseId)?.group))].filter(Boolean).slice(0, 4).map(g => <span key={g}>{g}</span>)}</div><div className="workout-feature-bottom"><button className="primary" onClick={() => draft ? setPage('session') : start(planned)}><Play size={18} fill="currentColor" />{draft ? '운동 이어하기' : '이 루틴으로 시작'}</button><button className="text-button" onClick={() => setPage('routines')}>루틴 변경 <ArrowRight size={16} /></button></div></section>
+ <div className="dashboard-grid"><div className="dashboard-left"><section className="workout-feature"><div className="row between"><span className="kicker">MY NEXT SESSION</span><span className="outline-pill"><Dumbbell size={14} />{activeGym?.name}</span></div><h2>{draft?.name || planned?.name || (plannedRest?'오늘은 휴식일':'나만의 운동')}</h2><p>{draft ? '진행 중인 운동을 이어가세요.' : plannedRest ? '주간 계획의 휴식일이에요. 원하면 자유 운동을 기록할 수 있어요.' : `${planned?.exercises.length || 0}개 종목 · 중량은 내 기록에 맞춰`}</p><div className="focus-chips">{[...new Set((planned?.exercises || []).map(e => exercise(e.exerciseId)?.group))].filter(Boolean).slice(0, 4).map(g => <span key={g}>{g}</span>)}</div><div className="workout-feature-bottom"><button className="primary" onClick={() => draft ? setPage('session') : start(planned)}><Play size={18} fill="currentColor" />{draft ? '운동 이어하기' : plannedRest?'자유 운동 시작':'이 루틴으로 시작'}</button><button className="text-button" onClick={() => setPage('routines')}>루틴 변경 <ArrowRight size={16} /></button></div></section>
  <div className="stat-grid"><div className="stat-card"><span><CalendarDays size={16} />이번 주 운동</span><strong>{weekDays}<small> / {state.profile.weeklyTarget}일</small></strong><Progress value={Math.min(100, weekDays / state.profile.weeklyTarget * 100)} className="small-progress" /></div><div className="stat-card"><span><Dumbbell size={16} />이번 주 본세트</span><strong>{weekSessions.reduce((n, s) => n + completedSets(s), 0)}<small> 세트</small></strong><small>완료한 본세트 기준</small></div><div className="stat-card"><span><Activity size={16} />최근 체중</span><strong>{recentBody[0] ? number(recentBody[0].weight) : '—'}<small> kg</small></strong><button className="tiny-link" onClick={() => setModal('body')}>체중 기록 <Plus size={12} /></button></div></div>
  <section className="panel week-panel"><div className="section-title"><h3>이번 주의 흐름</h3><span>{weekDays}일 완료</span></div><div className="week-days">{days.map((d, i) => {
                     const t = day(weekStart + i * 86400000);
@@ -548,10 +554,10 @@ export default function WorkoutApp({
             })}>취소</button></div>
  {!draft.exercises.length && <Empty title="오늘 할 운동을 추가하세요" description="즐겨찾기나 초성 검색으로 빠르게 찾을 수 있어요." action={<button className="primary" onClick={() => openPicker()}><Plus size={18} />운동 선택</button>} />}
  <div className="session-view-switch"><Tabs value={state.profile.sessionView||'focus'} onValueChange={v=>change(s=>{s.profile.sessionView=v as 'focus'|'all';s.profile.updatedAt=Date.now();})}><TabsList><TabsTrigger value="focus">집중 화면</TabsTrigger><TabsTrigger value="all">전체 운동</TabsTrigger></TabsList></Tabs></div>
- {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} onSkipRest={()=>setRestEnd(0)} onExtendRest={()=>setRestEnd(v=>Math.max(v,Date.now())+30000)} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
+ {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} onSkipRest={()=>setRestEnd(0)} onExtendRest={()=>setRestEnd(v=>Math.max(v,Date.now())+30000)} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onSwap={item=>openPicker('session',item.id)} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
  <div className="session-layout"><div className="session-exercises">{draft.exercises.map((e, ei) => {
                 const ex = exercise(e.exerciseId),
-                  rec = recommendation(state, e.exerciseId, e.equipmentId),
+                  rec = recommendation(state, e.exerciseId, e.equipmentId,e.repMin||8,e.repMax||12,e.effortCap||8),
                   last = previousWorkSets(state,e).sets,
                   recording=recordingFor(state,e),
                   timed = ex?.type === 'time' || ex?.type === 'cardio',
@@ -638,13 +644,13 @@ export default function WorkoutApp({
                 updatedAt: Date.now()
               });
               setModal('routine');
-            }}><Plus size={18} />루틴 만들기</button></div><section className="panel"><div className="section-title"><h3>주간 계획</h3><span>요일에 루틴을 연결하세요</span></div><div className="planner">{days.map((d, i) => <div key={d}><strong>{d}</strong><NativeSelect aria-label={`${d}요일 루틴`} value={state.profile.weekPlan[weekKeys[i]] || ''} onChange={e => change(s => {
+            }}><Plus size={18} />루틴 만들기</button></div><ProgramLibrary onImport={(rs,week,schedule)=>{let imported=false;const okay=change(s=>{imported=importProgram(s,rs,week,schedule);});if(okay&&imported){if(schedule)setFocusRoutine('');toast.success('새 프로그램을 루틴에 추가했어요.');return true;}toast('이미 추가한 구성은 내 루틴에서 편집하세요.');return false;}}/><section className="panel"><div className="section-title"><h3>주간 계획</h3><span>요일에 루틴을 연결하세요</span></div><div className="planner">{days.map((d, i) => <div key={d}><strong>{d}</strong><NativeSelect aria-label={`${d}요일 루틴`} value={state.profile.weekPlan[weekKeys[i]] || ''} onChange={e => change(s => {
                   s.profile.weekPlan[weekKeys[i]] = e.target.value;
                   s.profile.updatedAt = Date.now();
                 })}><option value="">휴식 / 자유</option>{routines.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</NativeSelect></div>)}</div></section><div className="routine-grid">{routines.map((r, i) => <section className="panel routine-card" key={r.id}><div className="row between"><span className="routine-index">{String(i + 1).padStart(2, '0')}</span><button className="icon-button" aria-label={`${r.name} 편집`} onClick={() => {
                   setEditRoutine(structuredClone(r));
                   setModal('routine');
-                }}><Settings2 size={18} /></button></div><h2>{r.name}</h2><p>{r.exercises.length}개 종목 · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</p><div className="routine-exercises">{r.exercises.slice(0, 4).map((e, j) => <div key={j}><span>{exercise(e.exerciseId)?.name || e.exerciseId}</span><b>{e.sets} × {e.reps}</b></div>)}{r.exercises.length > 4 && <small>+ {r.exercises.length - 4}개 종목</small>}</div><div className="row"><button className="secondary" onClick={() => {
+                }}><Settings2 size={18} /></button></div><h2>{r.name}</h2><p>{r.exercises.length}개 종목 · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</p><div className="routine-exercises">{r.exercises.slice(0, 4).map((e, j) => <div key={j}><span>{exercise(e.exerciseId)?.name || e.exerciseId}</span><b>{e.sets} × {e.reps}–{Math.max(e.reps,e.repMax)}</b></div>)}{r.exercises.length > 4 && <small>+ {r.exercises.length - 4}개 종목</small>}</div><div className="row"><button className="secondary" onClick={() => {
                   setFocusRoutine(r.id);
                   setPage('home');
                 }}>다음 운동으로</button><button className="primary" onClick={() => start(r)}><Play size={15} />시작</button></div></section>)}</div></>}
@@ -744,7 +750,7 @@ export default function WorkoutApp({
                   } catch {
                     toast.error('소리를 재생할 수 없어요. 기기와 브라우저 설정을 확인해 주세요.');
                   }
-                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.2 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
+                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.3 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
  {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
@@ -764,7 +770,7 @@ export default function WorkoutApp({
             import: '기록 가져오기',
             custom: '내 운동 추가'
           } as Record<string, string>)[modal] || '운동'}</DialogTitle><DialogDescription className="sr-only">운동 기록과 설정을 확인하고 저장하세요.</DialogDescription>
- {modal === 'picker' && <><div className="search-box"><Search size={18} /><input autoFocus placeholder="이름 또는 초성으로 검색" aria-label="추가할 운동 검색" value={query} onChange={e => setQuery(e.target.value)} /></div><div className="filter-chips">{GROUPS.map(g => <button key={g} className={group === g ? 'selected' : ''} onClick={() => setGroup(g)}>{g}</button>)}</div><div className="picker-results">{matched.slice(0, 60).map(e => exRow(e, true))}{!matched.length && <Empty title="검색 결과가 없어요" description="운동 이름을 바꾸거나 직접 추가할 수 있어요." />}</div><button className="secondary" onClick={() => setModal('custom')}><Plus size={16} />직접 추가</button></>}
+ {modal === 'picker' && <>{swapId&&<div className="program-notice"><strong>동작이 비슷한 대체 후보</strong><p>다른 기구의 중량을 그대로 옮기지 않아요. 아래에서 종목을 선택하고 설정·중량을 다시 확인하세요.</p>{alternatives(draft?.exercises.find(e=>e.id===swapId)?.name||'').map(name=>{const e=exercise(name);return e?exRow(e,true):null;})}</div>}<div className="search-box"><Search size={18} /><input autoFocus placeholder="이름 또는 초성으로 검색" aria-label="추가할 운동 검색" value={query} onChange={e => setQuery(e.target.value)} /></div><div className="filter-chips">{GROUPS.map(g => <button key={g} className={group === g ? 'selected' : ''} onClick={() => setGroup(g)}>{g}</button>)}</div><div className="picker-results">{matched.slice(0, 60).map(e => exRow(e, true))}{!matched.length && <Empty title="검색 결과가 없어요" description="운동 이름을 바꾸거나 직접 추가할 수 있어요." />}</div><button className="secondary" onClick={() => setModal('custom')}><Plus size={16} />직접 추가</button></>}
  {modal === 'exercise' && <><div className="exercise-badges">{pill(selectedEx.equipment)}{pill({
               weight: '중량 × 횟수',
               bodyweight: '맨몸 · 횟수',
@@ -775,7 +781,7 @@ export default function WorkoutApp({
  {modal === 'routine' && editRoutine && <><Field label="루틴 이름"><input value={editRoutine.name} maxLength={100} onChange={e => setEditRoutine({
               ...editRoutine,
               name: e.target.value
-            })} placeholder="예: 상체 A · 45분" /></Field><div className="routine-edit-list">{editRoutine.exercises.map((e, i) => <div className="routine-edit-row" key={i}><div className="row between"><strong>{exercise(e.exerciseId)?.name || e.exerciseId}</strong><div className="row"><button className="icon-button" disabled={!i} aria-label="운동 위로" onClick={() => {
+            })} placeholder="예: 상체 A · 45분" /></Field><RoutineReview routine={editRoutine}/><div className="routine-edit-list">{editRoutine.exercises.map((e, i) => <div className="routine-edit-row" key={i}><div className="row between"><strong>{exercise(e.exerciseId)?.name || e.exerciseId}</strong><div className="row"><button className="icon-button" disabled={!i} aria-label="운동 위로" onClick={() => {
                     const a = [...editRoutine.exercises];
                     [a[i - 1], a[i]] = [a[i], a[i - 1]];
                     setEditRoutine({
@@ -791,7 +797,11 @@ export default function WorkoutApp({
                   max: 30
                 }, {
                   key: 'reps',
-                  label: '목표 횟수',
+                  label: '최소 목표 횟수',
+                  max: 100
+                }, {
+                  key: 'repMax',
+                  label: '최대 목표 횟수',
                   max: 100
                 }, {
                   key: 'weight',

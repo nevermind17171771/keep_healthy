@@ -17,6 +17,7 @@ type Props = {
   onExtendRest: () => void;
   onChange: (exerciseId: string, setId: string, patch: Partial<SetEntry>) => void;
   onComplete: (exerciseId: string, setId: string) => void;
+  onSwap?: (item: SessionExercise) => void;
   onSettings: (item: SessionExercise) => void;
   onEquipment: (item: SessionExercise, id: string) => void;
   onTargets: (item: SessionExercise) => void;
@@ -61,7 +62,7 @@ function FocusExercise(props: Props & {
       if (next >= 0) setIndex(next);
     }
   };
-  return <section className="panel focus-exercise"><div className="focus-title"><span className="eyebrow">{cardio ? 'CARDIO' : 'NEXT SET'}</span><h2>{item.name}</h2><p>{ex?.primaryLabels.join(' · ') || '내 운동'}</p></div><div className="focus-tools"><NativeSelect aria-label={`${item.name} 기구`} value={item.equipmentId} onChange={e => props.onEquipment(item, e.target.value)}><option value="">기본 기록</option>{equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect><button className="secondary" onClick={() => props.onSettings(item)}><SlidersHorizontal size={17} />입력 설정</button><button className="text-button" onClick={() => props.onNotes(item)}>메모</button><a className="text-button video-link" href={shortsSearchUrl(item.name)} target="_blank" rel="noopener noreferrer" aria-label={`${item.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={17} />쇼츠 검색</a></div>
+  return <section className="panel focus-exercise"><div className="focus-title"><span className="eyebrow">{cardio ? 'CARDIO' : 'NEXT SET'}</span><h2>{item.name}</h2><p>{ex?.primaryLabels.join(' · ') || '내 운동'}</p></div>{item.repMin&&<p className="micro">목표 {item.repMin}–{item.repMax||item.repMin}회 · RPE {item.effortCap||8} 이하를 출발점으로 조절하세요.</p>}<div className="focus-tools"><NativeSelect aria-label={`${item.name} 기구`} value={item.equipmentId} onChange={e => props.onEquipment(item, e.target.value)}><option value="">기본 기록</option>{equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect><button className="secondary" onClick={() => props.onSettings(item)}><SlidersHorizontal size={17} />입력 설정</button><button className="text-button" onClick={() => props.onNotes(item)}>메모</button>{props.onSwap&&<button className="text-button" onClick={()=>props.onSwap!(item)}>대체 운동</button>}<a className="text-button video-link" href={shortsSearchUrl(item.name)} target="_blank" rel="noopener noreferrer" aria-label={`${item.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={17} />쇼츠 검색</a></div>
  {(eq?.setup || item.note) && <p className="focus-note">{[eq?.setup, item.note].filter(Boolean).join(' · ')}</p>}
  <div className="focus-set-nav" aria-label="세트 선택">{item.sets.map((s, i) => <button key={s.id} className={(i === actualIndex ? 'selected ' : '') + (s.done ? 'completed' : '')} aria-pressed={i === actualIndex} onClick={() => setIndex(i)}>{s.kind === 'warmup' ? 'W' : s.kind === 'drop' ? 'D' : i + 1}{s.done ? ' ✓' : ''}</button>)}<button aria-label={cardio ? '구간 추가' : '세트 추가'} onClick={() => {
         props.onAddSet(item);

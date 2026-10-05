@@ -35,3 +35,8 @@ test('weight pairs and degree cardio render in selected units with unchanged can
  const row=makeSet({weight:20,reps:10}),settings={...defaultRecording(true),weightBasis:'pair' as const};const html=renderToString(<StrengthSets name="덤벨 벤치프레스" type="weight" sets={[row]} previous={[row]} recording={settings} index={0} onChange={()=>{}} onComplete={()=>{}}/>);assert.match(html,/양쪽 합계 kg/);assert.match(html,/value="40"/);assert.match(html,/40kg \(양쪽 합계\)/);assert.equal(row.weight,20);
  const cardio=renderToString(<CardioSets name="인클라인 트레드밀 워크" recording={{...defaultRecording(),inclineUnit:'degree'}} sets={[makeSet({metrics:{incline:degreesToPercent(15)}})]} onChange={()=>{}} onComplete={()=>{}}/>);assert.match(cardio,/value="15"/);assert.match(cardio,/>°</);
 });
+
+import ProgramLibrary from '../components/program-library';
+test('program library renders reviewable order, volume, alternatives and opt-in schedule replacement',()=>{
+ const html=renderToString(<ProgramLibrary onImport={()=>true}/>);assert.match(html,/프로그램 선택/);assert.match(html,/직접 세트/);assert.match(html,/보조 참여/);assert.match(html,/주간 계획도 교체/);assert.match(html,/대체 운동/);assert.match(html,/기존 기본 루틴 개정본 15개/);assert.doesNotMatch(html,/CBum/);
+});

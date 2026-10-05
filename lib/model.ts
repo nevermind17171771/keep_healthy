@@ -40,6 +40,9 @@ const exSchema = z.object({
   name: z.string().max(160),
   equipmentId: z.string().default(''),
   recording: recordingSettingsSchema.optional(),
+  repMin: z.number().int().min(1).max(100).optional(),
+  repMax: z.number().int().min(1).max(100).optional(),
+  effortCap: z.number().min(5).max(9).optional(),
   note: z.string().max(2000).default(''),
   rest: num.default(90),
   superset: z.string().default(''),
@@ -66,6 +69,7 @@ const routineExSchema = z.object({
   reps: z.number().int().min(1).max(100),
   weight: num,
   rest: num,
+  effortCap: z.number().min(5).max(9).optional(),
   repMax: num.default(12)
 });
 export const stateSchema = z.object({
@@ -361,7 +365,7 @@ export function latestSets(state: AppState, id: string, equipmentId = '') {
   }
   return [];
 }
-export function recommendation(state: AppState, id: string, equipmentId = '', low = 8, high = 12) {
+export function recommendation(state: AppState, id: string, equipmentId = '', low = 8, high = 12, effortCap = 8) {
   const ex = exercise(id);
   const sets = latestSets(state, id, equipmentId);
   if (ex && ['time', 'cardio', 'bodyweight'].includes(ex.type)) return {
@@ -378,12 +382,12 @@ export function recommendation(state: AppState, id: string, equipmentId = '', lo
   };
   const last = sets[0];
   const step = recordingFor(state,{exerciseId:id,equipmentId}).weightStep;
-  const allHit = sets.every(s => s.weight === sets[0].weight && s.reps >= high && s.rpe > 0 && s.rpe <= 8);
+  const allHit = sets.every(s => s.weight === sets[0].weight && s.reps >= high && s.rpe > 0 && s.rpe <= effortCap);
   const assisted = ex?.type === 'assisted';
   return allHit ? {
     weight: Math.max(0, Math.round((last.weight + (assisted ? -step : step)) * 1000000) / 1000000),
     reps: low,
-    reason: `최근 ${sets.length}세트가 ${high}회 이상 · RPE 8 이하. ${assisted ? '보조중량 감소' : '최소 단위 증량'} 후보예요.`,
+    reason: `최근 ${sets.length}세트가 ${high}회 이상 · RPE ${effortCap} 이하. ${assisted ? '보조중량 감소' : '최소 단위 증량'} 후보예요.`,
     action: assisted ? '보조 줄이기' : '증량 제안'
   } : {
     weight: last.weight,
@@ -425,20 +429,23 @@ export function startSession(state: AppState, routine?: Routine): Session {
       const x = exercise(e.exerciseId);
       const equipmentId=preferredEquipment(state,e.exerciseId);
       const recording=recordingFor(state,{exerciseId:e.exerciseId,equipmentId});
-      const rec = recommendation(state, e.exerciseId,equipmentId);
+      const rec = recommendation(state, e.exerciseId,equipmentId,e.reps,Math.max(e.reps,e.repMax),e.effortCap||8);
       return {
         id: uid(),
         exerciseId: e.exerciseId,
         name: x?.name || e.exerciseId,
         equipmentId,
         recording,
+        repMin:e.reps,
+        repMax:Math.max(e.reps,e.repMax),
+        effortCap:e.effortCap||8,
         note: state.exerciseNotes[e.exerciseId] || '',
         rest: e.rest,
         superset: '',
         sets: Array.from({
           length: e.sets
         }, () => makeSet({
-          weight: rec.weight || e.weight,
+          weight: (e.effortCap&&e.effortCap<8) ? e.weight : rec.weight || e.weight,
           reps: x?.type === 'cardio' ? 0 : e.reps,
           duration: x?.type === 'time' ? 30 : 0,
           metrics: x?.type === 'cardio' ? {...recording.defaults} : {}

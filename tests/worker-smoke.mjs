@@ -1,7 +1,7 @@
 import {Miniflare} from 'miniflare';
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const mf=new Miniflare({modules:true,scriptPath:'dist/server/index.js',modulesRoot:'dist/server',modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
+const mf=new Miniflare({outboundService:()=>new Response('External fetch disabled in local smoke test',{status:403}),modules:true,scriptPath:'dist/server/index.js',modulesRoot:'dist/server',modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
 try{
  const db=await mf.getD1Database('DB');for(const sql of (await readFile('drizzle/0000_zippy_green_goblin.sql','utf8')).split('--> statement-breakpoint'))await db.prepare(sql.trim()).run();
  const anon=await mf.dispatchFetch('https://test.invalid/api/sync');assert.equal(anon.status,401);
@@ -11,6 +11,8 @@ try{
  const settings={weightUnit:'lb',weightBasis:'pair',inclineUnit:'level',fieldOrder:['duration','inclineLevel','calories'],hiddenFields:['speed'],weightStep:1.133980925,defaults:{inclineLevel:7}};
  snapshot.state.profile.recordingPreferences={'main/synthetic-incline':settings};
  snapshot.state.sessions[0].exercises[0].recording=settings;
+ Object.assign(snapshot.state.sessions[0].exercises[0],{repMin:8,repMax:12,effortCap:7});
+ snapshot.state.routines[0].exercises[0].effortCap=7;
  snapshot.state.sessions[0].exercises[0].sets[0].metrics.inclineLevel=7;
  snapshot.state.sessions[0].exercises[0].sets[0].target={weight:0,reps:0,duration:1200,distance:2.4};
  const wrote=await mf.dispatchFetch('https://test.invalid/api/sync',{method:'PUT',headers:{'content-type':'application/json','oai-authenticated-user-id':'synthetic-smoke-user',origin:'https://test.invalid'},body:JSON.stringify({state:snapshot.state,revision:0,clientSchema:2})});assert.equal(wrote.status,200);assert.equal((await wrote.json()).revision,1);
@@ -18,6 +20,9 @@ try{
  assert.deepEqual(roundtrip.state.profile.recordingPreferences,snapshot.state.profile.recordingPreferences);
  assert.equal(roundtrip.state.profile.sessionView,'focus');
  assert.deepEqual(roundtrip.state.sessions[0].exercises[0].recording,settings);
+ assert.equal(roundtrip.state.sessions[0].exercises[0].repMax,12);
+ assert.equal(roundtrip.state.sessions[0].exercises[0].effortCap,7);
+ assert.equal(roundtrip.state.routines[0].exercises[0].effortCap,7);
  assert.deepEqual(roundtrip.state.sessions[0].exercises[0].sets[0].target,{weight:0,reps:0,duration:1200,distance:2.4});
  const home=await mf.dispatchFetch('https://test.invalid/');assert.equal(home.status,200);const html=await home.text();assert.match(html,/KEEP HEALTHY/);assert.match(html,/lang="ko"/);assert.match(html,/manifest.webmanifest/);
  console.log('PASS: compiled Worker, D1 migrations, authenticated settings/targets/cardio round-trip, anonymous denial, rendered entrypoint');
