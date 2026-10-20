@@ -2546,3 +2546,9 @@ details summary {
 }
 
 .program-library{margin-bottom:24px}.program-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin:20px 0}.program-week span{padding:10px;background:var(--muted);font-size:12px;overflow-wrap:anywhere}.program-week b{display:block;margin-bottom:8px}.program-days details,.program-volume{border-top:1px solid var(--border);padding:16px 0}.program-days summary,.program-volume summary{cursor:pointer;font-weight:700;min-height:44px}.program-days ol{padding-left:24px}.program-days li{padding:10px 0}.program-days li>span{display:block;font-size:13px;color:var(--muted-foreground);margin:6px 0}.program-days select{max-width:100%}.program-volume table{width:100%;border-collapse:collapse;font-size:14px}.program-volume th,.program-volume td{text-align:left;border-bottom:1px solid var(--border);padding:10px}.program-notice{padding:16px;border:1px solid var(--border);border-left:3px solid var(--accent);margin:16px 0;font-size:14px}.program-notice p{margin:8px 0}.program-schedule{display:flex;align-items:center;gap:12px;min-height:48px;margin:12px 0}.program-library>p{margin:12px 0;line-height:1.6}@media(max-width:650px){.program-week{grid-template-columns:repeat(2,minmax(0,1fr))}.program-library h2{font-size:22px}}
+
+/* Timer participates in layout: it cannot cover set or exercise navigation. */
+.rest-timer { position: relative; inset: auto; transform: none; width: 100%; max-width: 100%; margin: 0 0 20px; z-index: auto; }
+.rest-timer-main { flex-wrap: wrap; }
+.focus-rest { flex-wrap: wrap; }
+.focus-navigation > button { min-height: 48px; }

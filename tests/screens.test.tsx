@@ -15,7 +15,7 @@ test('incline treadmill and stair climber render distinct accessible inputs and 
 });
 test('active exercises have outbound video search links and settings have a bell preview',()=>{
  const html=renderToString(<WorkoutApp initialPage="session"/>);assert.match(html,/트레드밀 유튜브 쇼츠 검색 \(새 탭\)/);assert.match(html,/target="_blank" rel="noopener noreferrer"/);assert.ok(!html.includes('<iframe'));assert.ok(html.includes('구간 추가'));assert.ok(!html.includes('트레드밀 1세트 중량'));
- const settings=renderToString(<WorkoutApp initialPage="settings"/>);assert.match(settings,/복싱 라운드 벨/);assert.match(settings,/미리 듣기/);
+ const settings=renderToString(<WorkoutApp initialPage="settings"/>);assert.match(settings,/복싱 라운드 벨/);assert.match(settings,/벨 테스트/);
 });
 
 import FocusWorkout from '../components/focus-workout';

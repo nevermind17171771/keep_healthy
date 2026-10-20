@@ -1,9 +1,5 @@
 import { stateSchema, type AppState } from './model';
-export type Cache = {
-  state: AppState;
-  revision: number;
-  pending: boolean;
-};
+export type Cache = import('./sync-engine').Snapshot;
 const open = () => new Promise<IDBDatabase>((resolve, reject) => {
   const req = indexedDB.open('keep-healthy-v4', 1);
   req.onupgradeneeded = () => req.result.createObjectStore('snapshots');
@@ -34,6 +30,9 @@ export async function readCache(): Promise<Cache | null> {
         const p = stateSchema.safeParse(c?.state);
         resolve(p.success ? {
           ...c,
+          revision: Number.isInteger(c.revision) && c.revision >= 0 ? c.revision : 0,
+          base: stateSchema.safeParse(c.base).success ? stateSchema.parse(c.base) : undefined,
+          outbox: c.outbox && typeof c.outbox.id === 'string' && Number.isInteger(c.outbox.revision) && stateSchema.safeParse(c.outbox.state).success ? { ...c.outbox, state: stateSchema.parse(c.outbox.state) } : undefined,
           state: p.data
         } : null);
       };

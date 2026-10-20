@@ -13,6 +13,7 @@ type Props = {
   state: AppState;
   session: Session;
   restRemaining: number;
+  restActive?: boolean;
   onSkipRest: () => void;
   onExtendRest: () => void;
   onChange: (exerciseId: string, setId: string, patch: Partial<SetEntry>) => void;
@@ -68,14 +69,14 @@ function FocusExercise(props: Props & {
         props.onAddSet(item);
         setIndex(item.sets.length);
       }}><Plus size={18} /></button></div>
- <div className="focus-target-action"><span>{previous.sets.length ? `지난 운동 ${new Date(previous.date).toLocaleDateString('ko-KR', {
+ <div className="focus-target-action"><span>{previous.sets.length ? `지난 기록 자동 입력 · ${new Date(previous.date).toLocaleDateString('ko-KR', {
           timeZone: 'Asia/Seoul',
           month: 'numeric',
           day: 'numeric'
         })}` : '이 기구의 첫 기록'}</span><button className="text-button" disabled={!previous.sets.length} onClick={() => props.onTargets(item)}>지난 세트를 오늘 목표로</button></div>
  {cardio ? <>{previous.sets[actualIndex] && <p className="set-reference">지난 구간 · {cardioSummary(item.name, previous.sets[actualIndex], recording)}</p>}<CardioSets name={item.name} sets={[set]} recording={recording} indexOffset={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} /></> : <StrengthSets name={item.name} type={ex?.type} sets={item.sets} previous={previous.sets} recording={recording} index={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} />}
  {!cardio && <div className="focus-rest-settings"><Timer size={17} /><NativeSelect aria-label={`${item.name} 휴식 시간`} value={item.rest} onChange={e => props.onRest(item, Number(e.target.value))}>{[30, 45, 60, 90, 120, 150, 180, 240, 300].map(n => <option key={n} value={n}>{timeLabel(n)} 휴식</option>)}</NativeSelect></div>}
- {props.restRemaining > 0 && <div className="focus-rest" role="status"><div><span>다음 세트까지</span><strong>{timeLabel(props.restRemaining)}</strong></div><button className="secondary" onClick={props.onExtendRest}>+30초</button><button className="text-button" onClick={props.onSkipRest}>휴식 끝내기</button></div>}
+ {(props.restActive || props.restRemaining > 0) && <div className="focus-rest" role="status"><div><span>{props.restRemaining ? '다음 세트까지' : '휴식 끝 · 준비됐어요'}</span><strong>{timeLabel(props.restRemaining)}</strong></div><button className="secondary" onClick={props.onExtendRest}>+30초</button><button className="text-button" onClick={props.onSkipRest}>휴식 끝내기</button></div>}
  <button className={'primary full focus-complete ' + (set.done ? 'is-done' : '')} onClick={complete}>{set.done ? '완료 취소' : `${actualIndex + 1}${cardio ? '구간' : '세트'} 완료`}</button>
  </section>;
 }

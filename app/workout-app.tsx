@@ -15,14 +15,14 @@ import { Toaster, toast } from 'sonner';
 import MuscleMap from '@/components/muscle-map';
 import CardioSets from '@/components/cardio-sets';
 import StrengthSets from '@/components/strength-sets';
+import { useRestTimer } from '@/lib/use-rest-timer';
 import FocusWorkout from '@/components/focus-workout';
 import RecordingEditor from '@/components/recording-editor';
 import { defaultRecording, weightText, displayedWeight, type RecordingSettings } from '@/lib/recording-settings';
 import { previousWorkSets, loadPreviousTargets, chooseEquipment } from '@/lib/session-actions';
 import { cardioSummary, nextCardioInterval, CARDIO_CSV_FIELDS } from '@/lib/cardio';
 import { shortsSearchUrl } from '@/lib/exercise-video';
-import { playRoundBell } from '@/lib/round-bell';
-import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, recommendation, startSession, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
+import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, recommendation, startSession, previousSetInputs, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
 import { useWorkout } from '@/lib/use-workout';
 import { download } from '@/lib/cache';
 const number = (v: number) => new Intl.NumberFormat('ko-KR', {
@@ -72,6 +72,8 @@ export default function WorkoutApp({
     status,
     error,
     conflict,
+    readOnly,
+    needsLogin,
     change,
     sync,
     resolve
@@ -94,8 +96,6 @@ export default function WorkoutApp({
       action: () => void;
     } | null>(null),
     [now, setNow] = useState(Date.now()),
-    [restEnd, setRestEnd] = useState(0),
-    [restLength, setRestLength] = useState(90),
     [recordFilter, setRecordFilter] = useState(''),
     [statsEx, setStatsEx] = useState(''),
     [statsEquipment, setStatsEquipment] = useState(''),
@@ -110,8 +110,6 @@ export default function WorkoutApp({
     [focusRoutine, setFocusRoutine] = useState(''),
     [updateReady, setUpdateReady] = useState<ServiceWorker | null>(null);
   const fileRef = useRef<HTMLInputElement>(null),
-    audioRef = useRef<AudioContext | null>(null),
-    notified = useRef(false),
     wakeLock = useRef<any>(null);
   const sessions = useMemo(() => liveSessions(state), [state]),
     draft = state.draft,
@@ -132,7 +130,7 @@ export default function WorkoutApp({
     weekDays = new Set(weekSessions.map(s => day(s.date))).size;
   const recentBody = [...state.body].filter(b => !b.deletedAt).sort((a, b) => b.date.localeCompare(a.date));
   const matched = useMemo(() => EXERCISES.filter(e => (group === '전체' || e.group === group || e.primary.includes(group)) && (gearFilter === '전체' || e.equipment === gearFilter) && (!favOnly || state.favorites.includes(e.id)) && searchName(e.name, query)), [group, gearFilter, favOnly, query, state.favorites]);
-  const restRemaining = Math.max(0, Math.ceil((restEnd - now) / 1000));
+  const {restEnd,restLength,restRemaining,start:rest,adjust:adjustRest,cancel:cancelRest,testSound,testNotification} = useRestTimer(draft?.id,ready);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
@@ -140,15 +138,6 @@ export default function WorkoutApp({
   useEffect(() => {
     document.documentElement.dataset.theme = state.profile.theme;
   }, [state.profile.theme]);
-  useEffect(() => {
-    if (!restEnd || restRemaining > 0 || notified.current) return;
-    notified.current = true;
-    toast.success('휴식 끝! 다음 세트를 시작할 시간이에요.');
-    try {
-      const c = audioRef.current;
-      if (c) void playRoundBell(c).catch(() => {});
-    } catch {}
-  }, [restEnd, restRemaining]);
   useEffect(() => {
     if (!('serviceWorker' in navigator) || process.env.NODE_ENV === 'development') return;
     void navigator.serviceWorker.register('/sw.js').then(r => {
@@ -205,7 +194,7 @@ export default function WorkoutApp({
         s.draft.name = '과거 운동';
       }
     });
-    setRestEnd(0);
+    cancelRest();
     setPage('session');
     setModal('');
   };
@@ -232,7 +221,6 @@ export default function WorkoutApp({
       if (!s.draft) s.draft = startSession(s);
       const equipmentId=preferredEquipment(s,id,s.draft.gymId);
       const recording=recordingFor(s,{exerciseId:id,equipmentId},s.draft.gymId);
-      const rec = recommendation(s, id,equipmentId);
       const item = {
         id: uid(),
         exerciseId: id,
@@ -242,17 +230,15 @@ export default function WorkoutApp({
         rest: 90,
         note: s.exerciseNotes[id] || '',
         superset: '',
-        sets: Array.from({
-          length: ex.type === 'cardio' ? 1 : 3
-        }, () => makeSet({
-          weight: rec.weight,
-          reps: ex.type === 'cardio' ? 0 : rec.reps,
+        sets: previousSetInputs(s, id, equipmentId, ex.type === 'cardio' ? 1 : 3, {
+          weight: 0,
+          reps: ex.type === 'cardio' ? 0 : 10,
           duration: ex.type === 'time' ? 30 : 0,
           metrics: ex.type === 'cardio' ? {...recording.defaults} : {}
-        }))
+        })
       };
       const i = s.draft.exercises.findIndex(e => e.id === swapId);
-      if (i >= 0 && !s.draft.exercises[i].sets.some(x=>x.done)) {const old=s.draft.exercises[i];Object.assign(item,{repMin:old.repMin,repMax:old.repMax,effortCap:old.effortCap,rest:old.rest});item.sets=Array.from({length:old.sets.length},()=>makeSet({reps:old.repMin||10}));s.draft.exercises[i]=item;}else s.draft.exercises.push(item);
+      if (i >= 0 && !s.draft.exercises[i].sets.some(x=>x.done)) {const old=s.draft.exercises[i];Object.assign(item,{repMin:old.repMin,repMax:old.repMax,effortCap:old.effortCap,rest:old.rest});item.sets=previousSetInputs(s,id,equipmentId,old.sets.length,{reps:old.repMin||10});s.draft.exercises[i]=item;}else s.draft.exercises.push(item);
       s.draft.updatedAt = Date.now();
     });
     setSelected(id);
@@ -276,19 +262,10 @@ export default function WorkoutApp({
   function selectEquipment(item:SessionExercise,id:string){
     if(item.sets.some(s=>s.done)){toast('완료한 세트가 있어요. 다른 기구는 운동을 새로 추가해서 기록해 주세요.');return;}
     const apply=()=>change(s=>{const row=s.draft?.exercises.find(e=>e.id===item.id);if(row&&chooseEquipment(s,row,id))s.draft!.updatedAt=Date.now();});
-    if(item.sets.some(s=>s.weight||s.duration||s.distance||Object.keys(s.metrics||{}).length))setConfirm({title:'기구를 변경할까요?',detail:'현재 종목의 미완료 입력값과 목표를 비우고 선택한 기구의 설정을 적용해요.',action:apply});else apply();
+    if(item.sets.some(s=>s.weight||s.duration||s.distance||Object.keys(s.metrics||{}).length))setConfirm({title:'기구를 변경할까요?',detail:'선택한 기구의 지난 무게·횟수를 불러와요. 이전 기록이 없으면 기본값으로 시작해요.',action:apply});else apply();
   }
   function loadTargets(item:SessionExercise){const okay=change(s=>{const row=s.draft?.exercises.find(e=>e.id===item.id);if(row&&loadPreviousTargets(s,row))s.draft!.updatedAt=Date.now();});if(okay)toast.success('미완료 본세트에 목표를 표시했어요. 실제 수행값과 완료 여부는 직접 기록하세요.');}
   function addSet(item:SessionExercise){changeDraft(s=>{const row=s.exercises.find(e=>e.id===item.id)!;const prev=row.sets.at(-1);row.sets.push(makeSet({...(exercise(row.exerciseId)?.type==='cardio'?nextCardioInterval(prev):prev),id:uid(),done:false,rpe:0,kind:'work',target:undefined}));});}
-  function rest(seconds: number) {
-    notified.current = false;
-    setRestLength(seconds);
-    setRestEnd(Date.now() + seconds * 1000);
-    try {
-      audioRef.current ||= new AudioContext();
-      void audioRef.current.resume();
-    } catch {}
-  }
   function toggleSet(eid: string, sid: string) {
     let seconds = 0;
     changeDraft(s => {
@@ -328,7 +305,7 @@ export default function WorkoutApp({
       s.draft = null;
     });
     if (!okay) return;
-    setRestEnd(0);
+    cancelRest();
     setModal('');
     setPage('home');
     setShareSession(saved);
@@ -487,6 +464,7 @@ export default function WorkoutApp({
     icon: BarChart3
   }];
   if (!ready) return <div className="boot"><div className="brand">KEEP<span>HEALTHY</span></div><h1>운동 기록을 불러오는 중</h1><p>기록과 루틴을 준비하고 있어요.</p></div>;
+  if (readOnly) return <div className="boot"><div className="brand">KEEP<span>HEALTHY</span></div><h1>다른 창에서 운동을 기록 중이에요</h1><p>그 창을 닫고 이 화면으로 돌아오면 같은 운동을 이어서 기록할 수 있어요.</p><button className="secondary" onClick={()=>location.reload()}>이 창에서 다시 확인</button></div>;
   return <Tabs value={page} onValueChange={v => {
     setPage(v);
     setPickerFor('session');
@@ -498,7 +476,9 @@ export default function WorkoutApp({
  <aside className="sidebar"><button className="brand" onClick={() => setPage('home')}><span className="brand-mark"><Activity size={21} /></span><span className="brand-words">KEEP<br /><b>HEALTHY</b></span></button><p className="nav-label">MY TRAINING</p><TabsList className="side-nav">{navItems.map(n => <TabsTrigger value={n.id} key={n.id} className="nav-item"><n.icon size={20} /><span>{n.name}</span>{page === n.id && <i />}</TabsTrigger>)}</TabsList><div className="sidebar-bottom"><div className="weekly-mini"><Flame size={19} /><span>이번 주 <b>{weekDays}</b> / {state.profile.weeklyTarget}일</span></div><button className={'nav-item ' + (page === 'settings' ? 'selected' : '')} onClick={() => setPage('settings')}><Settings2 size={19} />설정·데이터</button><div className="identity"><span className="avatar">{state.profile.name?.[0] || 'K'}</span><div><strong>{state.profile.name || '나의 트레이닝'}</strong><small>KEEP HEALTHY · 4.0</small></div></div></div></aside>
  <div className="workspace"><header className="topbar"><span className="breadcrumb">나의 트레이닝 <ChevronRight size={14} /> {page === 'session' ? '진행 중' : navItems.find(n => n.id === page)?.name || '설정'}</span><div className="top-actions"><button className="sync-label" onClick={() => void sync()} aria-label="지금 동기화">{status === '동기화 완료' ? <Cloud size={15} /> : <CloudOff size={15} />}<span>{status}</span></button><button className="icon-button" aria-label="설정 열기" onClick={() => setPage('settings')}><Settings2 size={20} /></button></div></header>
  <main className="main-content">
- {error && <div className="notice"><Info size={18} /><span>{error}</span>{conflict ? <button onClick={resolve}>백업 후 합치기</button> : <button onClick={() => void sync()}>다시 시도</button>}</div>}
+ {readOnly && <div className="notice"><Info size={18}/><span>다른 창에서 운동을 기록 중이에요. 그 창을 닫고 이 화면으로 돌아오면 이어서 기록할 수 있어요.</span></div>}
+ {!!restEnd && !!draft && (page !== 'session' || (state.profile.sessionView||'focus') !== 'focus') && <div className="rest-timer"><div className="rest-timer-main"><Timer size={22} /><div><small>{restRemaining ? '다음 세트까지' : '준비됐어요'}</small><strong>{timeLabel(restRemaining)}</strong></div><button aria-label="휴식 15초 줄이기" onClick={() => adjustRest(-15)}>−15</button><button aria-label="휴식 15초 늘리기" onClick={()=>adjustRest(15)}>+15</button><button className="text-button" onClick={() => cancelRest()}>건너뛰기</button><button className="icon-button" aria-label="휴식 닫기" onClick={() => cancelRest()}><X size={17} /></button></div><Progress value={restLength ? Math.min(100, restRemaining / restLength * 100) : 0} /></div>}
+ {error && <div className="notice"><Info size={18} /><span>{error}</span>{conflict ? <button onClick={resolve}>백업 후 합치기</button> : needsLogin ? <a href="/signin-with-chatgpt?return_to=%2F" target="_top">로그인하고 이어하기</a> : <button onClick={() => void sync()}>다시 시도</button>}</div>}
  {updateReady && !draft && <div className="notice"><Sparkles size={18} /><span>새 버전이 준비됐어요.</span><button onClick={() => {
             updateReady.postMessage({
               type: 'ACTIVATE'
@@ -549,12 +529,12 @@ export default function WorkoutApp({
                   s.draft = null;
                 });
                 setPage('home');
-                setRestEnd(0);
+                cancelRest();
               }
             })}>취소</button></div>
  {!draft.exercises.length && <Empty title="오늘 할 운동을 추가하세요" description="즐겨찾기나 초성 검색으로 빠르게 찾을 수 있어요." action={<button className="primary" onClick={() => openPicker()}><Plus size={18} />운동 선택</button>} />}
  <div className="session-view-switch"><Tabs value={state.profile.sessionView||'focus'} onValueChange={v=>change(s=>{s.profile.sessionView=v as 'focus'|'all';s.profile.updatedAt=Date.now();})}><TabsList><TabsTrigger value="focus">집중 화면</TabsTrigger><TabsTrigger value="all">전체 운동</TabsTrigger></TabsList></Tabs></div>
- {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} onSkipRest={()=>setRestEnd(0)} onExtendRest={()=>setRestEnd(v=>Math.max(v,Date.now())+30000)} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onSwap={item=>openPicker('session',item.id)} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
+ {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} restActive={!!restEnd} onSkipRest={()=>cancelRest()} onExtendRest={()=>adjustRest(30)} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onSwap={item=>openPicker('session',item.id)} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
  <div className="session-layout"><div className="session-exercises">{draft.exercises.map((e, ei) => {
                 const ex = exercise(e.exerciseId),
                   rec = recommendation(state, e.exerciseId, e.equipmentId,e.repMin||8,e.repMax||12,e.effortCap||8),
@@ -706,7 +686,7 @@ export default function WorkoutApp({
                 })}><option value="dark">다크</option><option value="light">라이트</option></NativeSelect></Field><p className="micro">목표 체중은 실제 측정 기록에 반영되지 않아요.</p></section><section className="panel"><div className="section-title"><h3>내 헬스장과 기구</h3><button className="text-button" onClick={() => setModal('gym')}><Plus size={15} />헬스장</button></div><Field label="현재 운동 장소"><NativeSelect value={state.profile.gymId} onChange={e => change(s => {
                   s.profile.gymId = e.target.value;
                   s.profile.updatedAt = Date.now();
-                })}>{state.gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</NativeSelect></Field><p className="micro">같은 운동도 기구마다 무게가 다를 수 있어요. 기구를 등록하고 좌석 번호·그립·최소 중량 단위를 남기세요.</p>{activeGym?.equipment.map(e => <div className="equipment-row" key={e.id}><Dumbbell size={18} /><div><strong>{e.name}</strong><small>{exercise(e.exerciseId)?.name}</small><p>{e.setup}</p></div><button className="secondary" onClick={()=>{setRecordingContext({exerciseId:e.exerciseId,equipmentId:e.id,gymId:activeGym!.id});setModal('recording');}}>입력 설정</button></div>)}<button className="secondary full" onClick={() => setModal('equipment')}><Plus size={16} />기구 등록</button></section><section className="panel"><div className="section-title"><h3>데이터와 백업</h3><ShieldCheck size={20} /></div><p className="subtext">이 기기의 임시 저장본과 계정의 저장본을 함께 관리해요. 다른 기기의 변경과 충돌하면 백업 후 합칠 수 있어요.</p><div className="backup-actions"><button className="secondary" onClick={exportJSON}><Download size={18} />JSON 백업</button><button className="secondary" onClick={() => fileRef.current?.click()}><Upload size={18} />기록 가져오기</button><button className="secondary" onClick={exportCSV}><Download size={18} />CSV 내보내기</button><button className="secondary" onClick={() => void sync()}><Cloud size={18} />지금 동기화</button></div><p className="micro">기존 앱의 설정 → JSON 백업 파일을 가져오세요. 원본 내용도 함께 보관하고 중복된 운동 ID는 합쳐요.</p>{error?.includes('로그인') && <a className="primary" href="/signin-with-chatgpt?return_to=%2F" target="_top">로그인하고 동기화</a>}<button className="text-button" onClick={async () => {
+                })}>{state.gyms.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</NativeSelect></Field><p className="micro">같은 운동도 기구마다 무게가 다를 수 있어요. 기구를 등록하고 좌석 번호·그립·최소 중량 단위를 남기세요.</p>{activeGym?.equipment.map(e => <div className="equipment-row" key={e.id}><Dumbbell size={18} /><div><strong>{e.name}</strong><small>{exercise(e.exerciseId)?.name}</small><p>{e.setup}</p></div><button className="secondary" onClick={()=>{setRecordingContext({exerciseId:e.exerciseId,equipmentId:e.id,gymId:activeGym!.id});setModal('recording');}}>입력 설정</button></div>)}<button className="secondary full" onClick={() => setModal('equipment')}><Plus size={16} />기구 등록</button></section><section className="panel"><div className="section-title"><h3>데이터와 백업</h3><ShieldCheck size={20} /></div><p className="subtext">이 기기의 임시 저장본과 계정의 저장본을 함께 관리해요. 다른 기기의 변경과 충돌하면 백업 후 합칠 수 있어요.</p><div className="backup-actions"><button className="secondary" onClick={exportJSON}><Download size={18} />JSON 백업</button><button className="secondary" onClick={() => fileRef.current?.click()}><Upload size={18} />기록 가져오기</button><button className="secondary" onClick={exportCSV}><Download size={18} />CSV 내보내기</button><button className="secondary" onClick={() => void sync()}><Cloud size={18} />지금 동기화</button></div><p className="micro">기존 앱의 설정 → JSON 백업 파일을 가져오세요. 원본 내용도 함께 보관하고 중복된 운동 ID는 합쳐요.</p>{needsLogin && <a className="primary" href="/signin-with-chatgpt?return_to=%2F" target="_top">로그인하고 동기화</a>}<button className="text-button" onClick={async () => {
                 try {
                   const r = await fetch('/api/sync?backups=1', {
                     cache: 'no-store'
@@ -743,14 +723,7 @@ export default function WorkoutApp({
                     const x = a.sessions.find(x => x.id === s.id)!;
                     delete x.deletedAt;
                     x.updatedAt = Date.now();
-                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식 시간은 화면을 닫아도 경과 시간을 계산해요. 소리 알림은 앱이 활성화되어 있을 때 동작하며, 기기의 절전 설정에 따라 제한될 수 있어요.</p><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={async () => {
-                  try {
-                    audioRef.current ||= new AudioContext();
-                    if (!(await playRoundBell(audioRef.current))) toast('기기 소리 설정을 확인해 주세요.');
-                  } catch {
-                    toast.error('소리를 재생할 수 없어요. 기기와 브라우저 설정을 확인해 주세요.');
-                  }
-                }}><Volume2 size={16} />미리 듣기</button></div><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.3 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
+                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식은 앱을 다시 열어도 남은 시간을 복원해요. 앱이 실행되는 동안 벨과 알림을 보내요. 다른 앱 사용·화면 잠금으로 실행이 멈추면 알림이 늦을 수 있으며, 현재 백그라운드 예약 푸시는 지원하지 않아요.</p><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={()=>void testSound()}><Volume2 size={16} />벨 테스트</button></div><button className="secondary" onClick={()=>void testNotification()}>알림 권한 · 배너 테스트</button><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.4 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
  {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
@@ -1001,9 +974,6 @@ export default function WorkoutApp({
             confirm?.action();
             setConfirm(null);
           }}>확인</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
- {!!restEnd && !!draft && <div className="rest-timer"><div className="rest-timer-main"><Timer size={22} /><div><small>{restRemaining ? '다음 세트까지' : '준비됐어요'}</small><strong>{timeLabel(restRemaining)}</strong></div><button aria-label="휴식 15초 줄이기" onClick={() => setRestEnd(x => Math.max(Date.now(), x - 15000))}>−15</button><button aria-label="휴식 15초 늘리기" onClick={() => {
-          notified.current = false;
-          setRestEnd(x => Math.max(Date.now(), x) + 15000);
-        }}>+15</button><button className="text-button" onClick={() => setRestEnd(0)}>건너뛰기</button><button className="icon-button" aria-label="휴식 닫기" onClick={() => setRestEnd(0)}><X size={17} /></button></div><Progress value={restLength ? Math.min(100, restRemaining / restLength * 100) : 0} /></div>}
+
  </Tabs>;
 }

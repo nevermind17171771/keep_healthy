@@ -1,4 +1,4 @@
-import { liveSessions, makeSet, recordingFor, type AppState, type SessionExercise } from './model';
+import { liveSessions, makeSet, recordingFor, previousSetInputs, type AppState, type SessionExercise } from './model';
 
 /** Never compare a machine with a different machine, gym, or the workout being edited. */
 export function previousWorkSets(state: AppState, item: SessionExercise) {
@@ -53,13 +53,15 @@ export function chooseEquipment(state: AppState, item: SessionExercise, equipmen
   item.equipmentId = equipmentId;
   delete item.recording;
   item.recording = recordingFor(state, item);
+  const seeded = previousSetInputs(state,item.exerciseId,equipmentId,item.sets.filter(s=>s.kind==='work').length);
+  let workIndex=0;
   item.sets = item.sets.map(old => makeSet({
-    id: old.id,
-    kind: old.kind,
     reps: old.reps,
     metrics: {
       ...item.recording!.defaults
-    }
+    },
+    ...(old.kind==='work'?seeded[workIndex++]:{}),
+    id:old.id, kind:old.kind
   }));
   return true;
 }

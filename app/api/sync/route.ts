@@ -48,7 +48,8 @@ export async function GET(request: Request) {
     }>();
     return json({
       state: r ? JSON.parse(r.payload) : defaultState(),
-      revision: r?.revision || 0
+      revision: r?.revision || 0,
+      owner: id
     });
   } catch (e) {
     console.error('Load failed', e);
@@ -72,6 +73,8 @@ export async function PUT(request: Request) {
       error: '백업 용량이 커서 동기화할 수 없어요. 파일로 내보내 주세요.'
     }, 413);
     const body = JSON.parse(raw);
+    if (body.owner && body.owner !== id) return json({error:'다른 계정으로 로그인했어요. 기존 계정으로 다시 로그인해 미전송 기록을 저장해 주세요.'},403);
+    if (body.mutationId !== undefined && (typeof body.mutationId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(body.mutationId))) return json({error:'저장 요청 정보가 올바르지 않아요.'},400);
     if (!Number.isInteger(body.revision) || body.revision < 0) return json({
       error: '버전 정보가 올바르지 않아요.'
     }, 400);
@@ -85,15 +88,22 @@ export async function PUT(request: Request) {
     }, 503);
     const now = new Date().toISOString();
     await db.prepare('INSERT OR IGNORE INTO workout_state(user_id,payload,revision,modified) VALUES(?,?,0,?)').bind(id, JSON.stringify(defaultState()), now).run();
-    const previous = await db.prepare('SELECT payload,revision FROM workout_state WHERE user_id=?').bind(id).first<{
+    const mutationHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(checked.data))))).map(x=>x.toString(16).padStart(2,'0')).join('');
+    const previous = await db.prepare('SELECT payload,revision,mutation_id,mutation_hash FROM workout_state WHERE user_id=?').bind(id).first<{
       payload: string;
       revision: number;
+      mutation_id: string | null;
+      mutation_hash: string | null;
     }>();
+    if (previous && body.mutationId && previous.mutation_id === body.mutationId) {
+      if (previous.mutation_hash !== mutationHash) return json({error:'같은 저장 요청의 내용이 달라요.'},400);
+      return json({revision:previous.revision,owner:id,replayed:true});
+    }
     if (previous) {
       const old = stateSchema.safeParse(JSON.parse(previous.payload));
       if (old.success) preserveMissingMetrics(checked.data, old.data,body.clientSchema!==2);
     }
-    const result = await db.prepare('UPDATE workout_state SET payload=?,revision=revision+1,modified=? WHERE user_id=? AND revision=? RETURNING revision').bind(JSON.stringify(checked.data), now, id, body.revision).first<{
+    const result = await db.prepare('UPDATE workout_state SET payload=?,revision=revision+1,modified=?,mutation_id=?,mutation_hash=? WHERE user_id=? AND revision=? RETURNING revision').bind(JSON.stringify(checked.data), now, body.mutationId || null, mutationHash, id, body.revision).first<{
       revision: number;
     }>();
     if (!result) return json({
@@ -105,6 +115,7 @@ export async function PUT(request: Request) {
     }
     return json({
       revision: result.revision,
+      owner: id,
       updatedAt: now
     });
   } catch (e) {

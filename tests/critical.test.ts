@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {defaultState,stateSchema,startSession,makeSet,exercise,EXERCISES,elapsed,oneRM,volume,completedSets,latestSets,recommendation,migrate,mergeStates,day,parseTime,type AppState} from '../lib/model';
 import {GET,PUT} from '../app/api/sync/route';
 import {env} from './cloudflare';
@@ -23,7 +23,7 @@ test('re-importing a legacy backup does not duplicate body or workout records',(
 test('malformed backup is rejected as a whole',()=>{assert.throws(()=>migrate({sessions:[{date:'not-a-date',exercises:[]}]}));assert.throws(()=>migrate({random:true}));});
 test('merge preserves deletes and unrelated newer records',()=>{const a=saved(),b=structuredClone(a);a.sessions[0].deletedAt=2000;a.sessions[0].updatedAt=2000;b.sessions[0].updatedAt=1000;b.sessions.push({...b.sessions[0],id:'other',updatedAt:3000});const s=mergeStates(a,b);assert.equal(s.sessions.length,2);assert.equal(s.sessions[0].deletedAt,2000);});
 test('Seoul calendar boundary is independent from the execution machine timezone',()=>{assert.equal(day('2026-09-01T15:30:00Z'),'2026-09-02');});
-function database(){const db=new DatabaseSync(':memory:');db.exec(readFileSync('drizzle/0000_zippy_green_goblin.sql','utf8'));env.DB={prepare(sql:string){let args:unknown[]=[];const q={bind(...v:unknown[]){args=v;return q;},async first(){return db.prepare(sql).get(...args as any[])||null;},async all(){return {results:db.prepare(sql).all(...args as any[])};},async run(){const r=db.prepare(sql).run(...args as any[]);return {success:true,meta:{changes:r.changes}};}};return q;}};return db;}
+function database(){const db=new DatabaseSync(':memory:');for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+file,'utf8'));env.DB={prepare(sql:string){let args:unknown[]=[];const q={bind(...v:unknown[]){args=v;return q;},async first(){return db.prepare(sql).get(...args as any[])||null;},async all(){return {results:db.prepare(sql).all(...args as any[])};},async run(){const r=db.prepare(sql).run(...args as any[]);return {success:true,meta:{changes:r.changes}};}};return q;}};return db;}
 const req=(user:string|null,body?:unknown,origin?:string,path='')=>new Request('https://example.test/api/sync'+path,{method:body?'PUT':'GET',headers:{...(user?{'oai-authenticated-user-id':user}:{}),...(origin?{origin}:{}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
 test('API denies anonymous reads and writes',async()=>{const db=database();assert.equal((await GET(req(null))).status,401);assert.equal((await PUT(req(null,{state:defaultState(),revision:0}))).status,401);db.close();});
 test('API persists valid snapshots, isolates users, and exposes owner-only backups',async()=>{const db=database();const s=saved();assert.equal((await PUT(req('user-a',{state:s,revision:0}))).status,200);const a=await(await GET(req('user-a'))).json() as any,b=await(await GET(req('user-b'))).json() as any;assert.equal(a.state.sessions.length,1);assert.equal(a.revision,1);assert.equal(b.state.sessions.length,0);assert.equal(b.revision,0);const backups=await(await GET(req('user-a',undefined,undefined,'?backups=1'))).json() as any;assert.equal(backups.backups.length,1);assert.equal((await GET(req('user-b',undefined,undefined,'?restore='+backups.backups[0].id))).status,404);db.close();});
@@ -185,14 +185,96 @@ test('routine review identifies triceps pre-fatigue and overlapping unsupported 
  const r=programRoutines(PROGRAMS[0])[0],entry=r.exercises[0];r.exercises=[{...entry,exerciseId:exercise('케이블 로프 푸시다운')!.id},{...entry,exerciseId:exercise('머신 체스트 프레스')!.id}];assert.ok(routineWarnings(r).some(x=>x.includes('피로')));
  r.exercises=[{...entry,exerciseId:exercise('바벨 루마니안 데드리프트')!.id},{...entry,exerciseId:exercise('바벨 로우')!.id}];assert.ok(routineWarnings(r).some(x=>x.includes('허리')));
 });
-test('routine rep ranges drive progression and are saved in the workout snapshot',()=>{
- const s=saved('머신 체스트 프레스',40,15);const r=programRoutines(PROGRAMS[0])[0];r.exercises=[{...r.exercises[1],reps:12,repMax:15}];const session=startSession(s,r);assert.equal(session.exercises[0].repMin,12);assert.equal(session.exercises[0].repMax,15);assert.equal(session.exercises[0].sets[0].weight,42.5);
+test('routine rep ranges remain suggestions while previous actual loads prefill inputs',()=>{
+ const s=saved('머신 체스트 프레스',40,15);const r=programRoutines(PROGRAMS[0])[0];r.exercises=[{...r.exercises[1],reps:12,repMax:15}];const session=startSession(s,r);assert.equal(session.exercises[0].repMin,12);assert.equal(session.exercises[0].repMax,15);assert.equal(session.exercises[0].sets[0].weight,40);
  s.sessions[0].exercises[0].sets[0].reps=12;assert.equal(startSession(s,r).exercises[0].sets[0].weight,40);
- r.exercises[0].effortCap=7;assert.equal(startSession(s,r).exercises[0].sets[0].weight,0);
+ r.exercises[0].effortCap=7;assert.equal(startSession(s,r).exercises[0].sets[0].weight,40);
 });
 test('legacy writes preserve workout targets and routine effort caps',()=>{
  const old=defaultState(),r=programRoutines(PROGRAMS[0])[0];old.routines=[r];old.draft=startSession(old,r);const incoming=structuredClone(old);delete incoming.draft!.exercises[0].repMin;delete incoming.draft!.exercises[0].repMax;delete incoming.draft!.exercises[0].effortCap;delete incoming.routines[0].exercises[0].effortCap;preserveMissingMetrics(incoming,old,false);assert.equal(incoming.draft!.exercises[0].repMax,12);assert.equal(incoming.routines[0].exercises[0].effortCap,8);
 });
 test('revised defaults avoid late shoulder presses, unsupported row after hinge and unauthenticated athlete names',()=>{
  const rs=defaultState().routines;assert.equal(rs.length,15);assert.ok(rs.every(r=>!r.name.includes('CBum')));const shoulder=rs.find(r=>r.name==='어깨 특화 · 기본')!;assert.equal(exercise(shoulder.exercises[0].exerciseId)?.name,'머신 숄더 프레스');assert.ok(shoulder.exercises.reduce((n,e)=>n+e.sets,0)<=12);const full=rs.find(r=>r.name==='Full Body B — 근성장')!;assert.ok(full.exercises.some(e=>exercise(e.exerciseId)?.name==='체스트 서포티드 로우'));
+});
+
+import { previousSetInputs } from '../lib/model';
+import { WorkoutSync, type Snapshot, type Outbox } from '../lib/sync-engine';
+import { reconcile } from '../lib/sync-merge';
+import { readRest, restSeconds } from '../lib/rest-timer';
+
+test('previous actual weights and reps seed each set, including zero, without automatic progression',()=>{
+ const s=saved();const row=s.sessions[0].exercises[0];row.sets=[makeSet({weight:40,reps:12,done:true,rpe:6}),makeSet({weight:37.5,reps:9,done:true}),makeSet({weight:0,reps:7,done:true}),makeSet({weight:100,reps:1,done:false})];
+ const r={id:'routine',name:'routine',updatedAt:1,exercises:[{exerciseId:row.exerciseId,sets:4,reps:8,repMax:10,weight:60,rest:90}]};
+ const seeded=startSession(s,r).exercises[0].sets;
+ assert.deepEqual(seeded.map(x=>[x.weight,x.reps]),[[40,12],[37.5,9],[0,7],[0,7]]);
+ assert.ok(seeded.every(x=>!x.done&&x.rpe===0));assert.equal(new Set(seeded.map(x=>x.id)).size,4);assert.ok(!row.sets.some(x=>seeded.some(y=>y.id===x.id)));
+ assert.equal(previousSetInputs(s,row.exerciseId,'other-machine',1,{weight:10,reps:5})[0].weight,10);
+});
+test('choosing a previously used machine restores that machine, not the former load',()=>{
+ const s=saved();const row=s.sessions[0].exercises[0];row.equipmentId='machine-b';s.draft=startSession(s);const item=structuredClone(row);item.equipmentId='machine-a';item.sets=[makeSet({weight:90,reps:3})];s.draft.exercises=[item];
+ assert.equal(chooseEquipment(s,item,'machine-b'),true);assert.equal(item.sets[0].weight,40);assert.equal(item.sets[0].reps,10);assert.equal(item.sets[0].done,false);
+});
+test('timer uses persisted wall-clock deadline across suspension, rejects another workout and malformed storage',()=>{
+ const raw=JSON.stringify({sessionId:'one',end:120000,length:90});const timer=readRest(raw,'one');assert.equal(restSeconds(timer,60000),60);assert.equal(restSeconds(timer,150000),0);assert.equal(readRest(raw,'two'),null);assert.equal(readRest('broken','one'),null);assert.equal(readRest(JSON.stringify({sessionId:'one',end:'bad',length:90}),'one'),null);
+});
+test('retrying one committed API mutation acknowledges it once and rejects changed reuse',async()=>{
+ const db=database();try{const body={state:saved(),revision:0,mutationId:'one-operation',clientSchema:2};const first=await PUT(req('retry-user',body));assert.equal(first.status,200);const retry=await PUT(req('retry-user',body));assert.equal(retry.status,200);assert.equal((await retry.json() as any).revision,1);const changed=structuredClone(body);changed.state.sessions[0].note='different';assert.equal((await PUT(req('retry-user',changed))).status,400);assert.equal((await PUT(req('other-user',{...body,owner:'retry-user'}))).status,403);}finally{db.close();}
+});
+function syncHarness() {
+ let stored:Snapshot|null=null, failAfterCommit=false, puts=0;
+ const request=async(outbox?:Outbox)=>{
+  const response=outbox?await PUT(req('sync-user',{state:outbox.state,revision:outbox.revision,mutationId:outbox.id,clientSchema:2})):await GET(req('sync-user'));
+  if(outbox){puts++;if(failAfterCommit&&response.ok){failAfterCommit=false;throw new Error('Simulated background suspension after commit');}}
+  return{status:response.status,data:await response.json()};
+ };
+ const create=()=>new WorkoutSync({request,persist:async value=>{stored=structuredClone(value);},notify:()=>{}});
+ return{create,request,get stored(){return stored!;},get puts(){return puts;},failNext(){failAfterCommit=true;}};
+}
+test('background commit with a lost response resumes one draft, retains new edits and uses one retry id',async()=>{
+ const db=database();try{const h=syncHarness(),a=h.create();await a.sync();a.edit(s=>{s.draft=startSession(s,s.routines[0]);s.draft.exercises[0].sets[0].done=true;});const id=a.snapshot.state.draft!.id;h.failNext();await a.sync();assert.ok(h.stored.outbox);const operation=h.stored.outbox!.id;
+ const resumed=h.create();resumed.restore(h.stored);resumed.edit(s=>{s.draft!.exercises[0].sets[1].done=true;});assert.equal(resumed.snapshot.outbox!.id,operation);await resumed.sync();
+ assert.equal(resumed.conflict,null);assert.equal(resumed.snapshot.pending,false);assert.equal(resumed.snapshot.revision,2);assert.equal(resumed.snapshot.state.draft!.id,id);assert.equal(resumed.snapshot.state.recoveredDrafts.length,0);assert.ok(resumed.snapshot.state.draft!.exercises[0].sets.slice(0,2).every(s=>s.done));assert.equal(h.puts,3);
+ }finally{db.close();}
+});
+test('returning to the app during a slow GET never overwrites edits made while it was loading',async()=>{
+ const base=defaultState();base.draft=startSession(base,base.routines[0]);let release!:(v:any)=>void;
+ const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:outbox=>outbox?Promise.resolve({status:200,data:{revision:2,owner:'u'}}):new Promise(resolve=>{release=resolve;})});engine.restore({state:base,base,revision:1,pending:false,owner:'u'});
+ const running=engine.sync();engine.edit(s=>{s.draft!.exercises[0].sets[0].done=true;});release({status:200,data:{state:base,revision:1,owner:'u'}});await running;assert.equal(engine.snapshot.state.draft!.exercises[0].sets[0].done,true);assert.equal(engine.snapshot.pending,false);assert.equal(engine.conflict,null);
+});
+test('overlapping focus/online requests share one in-flight operation',async()=>{
+ let count=0,release!:(v:any)=>void;const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:()=>{count++;return new Promise(resolve=>{release=resolve;});}});
+ const a=engine.sync(),b=engine.sync();assert.equal(a,b);assert.equal(count,1);release({status:200,data:{state:defaultState(),revision:0}});await a;
+});
+test('non-overlapping changes to two sets reconcile without producing a second workout',()=>{
+ const base=defaultState();base.draft=startSession(base,base.routines[0]);const local=structuredClone(base),remote=structuredClone(base);local.draft!.exercises[0].sets[0].done=true;remote.draft!.exercises[0].sets[1].done=true;local.draft!.updatedAt+=1;remote.draft!.updatedAt+=2;
+ const result=reconcile(base,local,remote)!;assert.ok(result);assert.equal(result.draft!.id,base.draft.id);assert.ok(result.draft!.exercises[0].sets.slice(0,2).every(x=>x.done));assert.equal(result.recoveredDrafts.length,0);
+});
+test('different edits to the same weight require review without overwriting either original',()=>{
+ const base=defaultState();base.draft=startSession(base,base.routines[0]);const local=structuredClone(base),remote=structuredClone(base);local.draft!.exercises[0].sets[0].weight=40;remote.draft!.exercises[0].sets[0].weight=45;assert.equal(reconcile(base,local,remote),null);assert.equal(local.draft!.exercises[0].sets[0].weight,40);assert.equal(remote.draft!.exercises[0].sets[0].weight,45);
+});
+test('manual merge keeps one active session with the same id and never resurrects a completed one',()=>{
+ const a=defaultState();a.draft=startSession(a,a.routines[0]);const b=structuredClone(a);b.draft!.updatedAt+=1;b.draft!.exercises[0].sets[1].done=true;const result=mergeStates(a,b);assert.equal(result.recoveredDrafts.length,0);assert.equal(result.draft!.exercises[0].sets[1].done,true);
+ const done=structuredClone(b);done.sessions=[done.draft!];done.draft=null;assert.equal(mergeStates(a,done).draft,null);assert.equal(mergeStates(a,done).sessions.length,1);
+});
+test('offline and expired-login responses preserve the active workout and show a login action',async()=>{
+ const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:async()=>({status:401,data:{error:'로그인이 필요해요.'}})});const state=defaultState();state.draft=startSession(state,state.routines[0]);engine.restore({state,revision:1,pending:true,base:state});const id=state.draft.id;await engine.sync();assert.equal(engine.needsLogin,true);assert.equal(engine.snapshot.state.draft!.id,id);assert.equal(engine.snapshot.pending,true);assert.equal(engine.conflict,null);
+});
+test('a different signed-in account cannot receive pending records from this device',async()=>{
+ const state=defaultState();const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:async()=>({status:200,data:{state:defaultState(),revision:0,owner:'other'}})});engine.restore({state,revision:1,pending:true,base:state,owner:'original'});await engine.sync();assert.match(engine.error,/다른 계정/);assert.equal(engine.snapshot.owner,'original');assert.equal(engine.snapshot.pending,true);
+});
+
+test('a lost response followed by another device update merges new sets and keeps the original start time',async()=>{
+ const db=database();try{const h=syncHarness(),engine=h.create();await engine.sync();engine.edit(s=>{s.draft=startSession(s,s.routines[0]);});await engine.sync();const start=engine.snapshot.state.draft!.startedAt;
+ engine.edit(s=>{s.draft!.exercises[0].sets[0].done=true;});h.failNext();await engine.sync();const interrupted=h.stored;
+ const remote=await(await GET(req('sync-user'))).json() as any;remote.state.draft.exercises[0].sets[1].done=true;await PUT(req('sync-user',{...remote,mutationId:'other-device',clientSchema:2}));
+ const resumed=h.create();resumed.restore(interrupted);resumed.edit(s=>{s.draft!.exercises[0].sets[2].done=true;});await resumed.sync();assert.equal(resumed.conflict,null);assert.equal(resumed.snapshot.pending,false);assert.equal(resumed.snapshot.state.draft!.startedAt,start);assert.ok(resumed.snapshot.state.draft!.exercises[0].sets.slice(0,3).every(s=>s.done));assert.equal(resumed.snapshot.state.recoveredDrafts.length,0);
+ }finally{db.close();}
+});
+test('failed durable outbox persistence stops upload and retains all pending edits',async()=>{
+ let puts=0;const state=defaultState();const engine=new WorkoutSync({notify:()=>{},persist:async()=>{throw Error('storage unavailable');},request:async outbox=>{if(outbox)puts++;return{status:200,data:{state,revision:0}};}});engine.restore({state,base:state,revision:0,pending:true});engine.edit(s=>{s.draft=startSession(s);});await engine.sync();assert.equal(puts,0);assert.ok(engine.snapshot.state.draft);assert.equal(engine.snapshot.pending,true);
+});
+
+test('upgrading an older cache recovers a proven continuation without a false other-device conflict',async()=>{
+ const server=defaultState();server.draft=startSession(server,server.routines[0]);server.draft.exercises[0].sets[0].done=true;const local=structuredClone(server);local.draft!.exercises[0].sets[1].done=true;local.draft!.updatedAt+=1;
+ const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:async outbox=>outbox?{status:200,data:{revision:3,owner:'u'}}:{status:200,data:{state:server,revision:2,owner:'u'}}});engine.restore({state:local,revision:1,pending:true});await engine.sync();assert.equal(engine.conflict,null);assert.equal(engine.snapshot.pending,false);assert.ok(engine.snapshot.state.draft!.exercises[0].sets[1].done);assert.equal(engine.snapshot.state.recoveredDrafts.length,0);
 });

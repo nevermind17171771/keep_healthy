@@ -412,6 +412,15 @@ export function preferredEquipment(state:AppState,exerciseId:string,gymId=state.
   }
   return available.length===1?available[0].id:'';
 }
+/** Seed actual inputs from the last completed work sets for this exact gym/machine. */
+export function previousSetInputs(state: AppState, exerciseId: string, equipmentId: string, count: number, fallback: Partial<SetEntry> = {}) {
+  const previous = latestSets(state, exerciseId, equipmentId);
+  const type = exercise(exerciseId)?.type;
+  return Array.from({length:count}, (_, index) => {
+    const before = previous[Math.min(index, previous.length - 1)];
+    return makeSet({ ...fallback, ...(before && type !== 'cardio' ? {weight:before.weight,reps:before.reps,duration:type==='time'?before.duration:(fallback.duration||0)} : {}), done:false, rpe:0 });
+  });
+}
 export function startSession(state: AppState, routine?: Routine): Session {
   const now = Date.now();
   return {
@@ -429,7 +438,6 @@ export function startSession(state: AppState, routine?: Routine): Session {
       const x = exercise(e.exerciseId);
       const equipmentId=preferredEquipment(state,e.exerciseId);
       const recording=recordingFor(state,{exerciseId:e.exerciseId,equipmentId});
-      const rec = recommendation(state, e.exerciseId,equipmentId,e.reps,Math.max(e.reps,e.repMax),e.effortCap||8);
       return {
         id: uid(),
         exerciseId: e.exerciseId,
@@ -442,14 +450,12 @@ export function startSession(state: AppState, routine?: Routine): Session {
         note: state.exerciseNotes[e.exerciseId] || '',
         rest: e.rest,
         superset: '',
-        sets: Array.from({
-          length: e.sets
-        }, () => makeSet({
-          weight: (e.effortCap&&e.effortCap<8) ? e.weight : rec.weight || e.weight,
+        sets: previousSetInputs(state, e.exerciseId, equipmentId, e.sets, {
+          weight: e.weight,
           reps: x?.type === 'cardio' ? 0 : e.reps,
           duration: x?.type === 'time' ? 30 : 0,
           metrics: x?.type === 'cardio' ? {...recording.defaults} : {}
-        }))
+        })
       };
     })
   };
@@ -463,8 +469,29 @@ export function mergeStates(a: AppState, b: AppState): AppState {
     for (const v of y) if (!m.has(v.id) || v.updatedAt > m.get(v.id)!.updatedAt) m.set(v.id, v);
     return [...m.values()];
   };
+  const combineSession = (x: Session, y: Session): Session => {
+    const newer = x.updatedAt >= y.updatedAt ? x : y, older = newer === x ? y : x;
+    const exercises = new Map(newer.exercises.map(e => [e.id, structuredClone(e)]));
+    for (const row of older.exercises) {
+      const current = exercises.get(row.id);
+      if (!current) { exercises.set(row.id, structuredClone(row)); continue; }
+      const sets = new Map(current.sets.map(set => [set.id, set]));
+      for (const set of row.sets) if (!sets.has(set.id) || (set.done && !sets.get(set.id)!.done)) sets.set(set.id, set);
+      current.sets = [...sets.values()];
+    }
+    return {...newer, exercises:[...exercises.values()]};
+  };
+  const sessions = merge(a.sessions, b.sessions);
+  for (const row of a.sessions) { const other=b.sessions.find(s=>s.id===row.id); if(other) sessions[sessions.findIndex(s=>s.id===row.id)]=combineSession(row,other); }
+  let draft = a.draft && b.draft && a.draft.id === b.draft.id ? combineSession(a.draft,b.draft) : a.draft || b.draft;
+  if (draft && sessions.some(s=>s.id===draft!.id)) {
+    const i=sessions.findIndex(s=>s.id===draft!.id), finished=sessions[i];
+    sessions[i]={...combineSession(draft,finished),duration:finished.duration};
+    delete sessions[i].startedAt; delete sessions[i].pausedAt; delete sessions[i].pausedMs;
+    draft=null;
+  }
   const recoveredDrafts = merge(a.recoveredDrafts || [], b.recoveredDrafts || []);
-  if (a.draft && b.draft && JSON.stringify(a.draft) !== JSON.stringify(b.draft)) {
+  if (a.draft && b.draft && a.draft.id !== b.draft.id && !sessions.some(s=>s.id===b.draft!.id)) {
     const saved = {
       ...b.draft,
       id: 'recovery-' + b.draft.id + '-' + b.draft.updatedAt,
@@ -479,7 +506,7 @@ export function mergeStates(a: AppState, b: AppState): AppState {
   return {
     ...a,
     recoveredDrafts,
-    sessions: merge(a.sessions, b.sessions),
+    sessions,
     routines: merge(a.routines, b.routines),
     gyms: merge(a.gyms, b.gyms),
     body: merge(a.body, b.body),
@@ -489,7 +516,7 @@ export function mergeStates(a: AppState, b: AppState): AppState {
       ...a.exerciseNotes,
       ...b.exerciseNotes
     },
-    draft: a.draft || b.draft,
+    draft,
     legacyArchive: a.legacyArchive || b.legacyArchive
   };
 }
