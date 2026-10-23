@@ -1,4 +1,4 @@
-export type RestTimer = { sessionId: string; end: number; length: number; alerted?: boolean };
+export type RestTimer = { sessionId: string; end: number; length: number; alerted?: boolean; soundPlayed?: boolean; dismissed?: boolean; test?: boolean };
 export const REST_KEY = 'keep-healthy-rest-v1';
 export function readRest(raw: string | null, sessionId: string): RestTimer | null {
   try {

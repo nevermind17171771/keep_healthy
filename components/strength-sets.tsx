@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { NativeSelect } from '@/components/ui/native-select';
 import { timeLabel, parseTime, type SetEntry } from '@/lib/model';
 import { displayedWeight, toStoredWeight, weightLabel, weightText, type RecordingSettings } from '@/lib/recording-settings';
+import { stepReps } from '@/lib/set-inputs';
 import { toast } from 'sonner';
 type Props = {
   name: string;
@@ -60,12 +61,12 @@ export default function StrengthSets({
               }} /><button type="button" aria-label={`${name} ${i + 1}세트 중량 늘리기`} onClick={() => onChange(set.id, {
                 weight: Math.round((set.weight + recording.weightStep) * 1e6) / 1e6
               })}>+</button></div>}</label>
-   {!timed && <label className="field"><span>횟수</span><input aria-label={`${name} ${i + 1}세트 횟수`} type="number" inputMode="numeric" min="0" max="1000000" step="1" value={set.reps || ''} placeholder="0" onChange={e => {
+   {!timed && <label className="field"><span>횟수</span><div className="weight-control reps-control"><button type="button" aria-label={`${name} ${i + 1}세트 횟수 줄이기`} disabled={set.reps<=0} onClick={()=>onChange(set.id,{reps:stepReps(set.reps,-1)})}>−</button><input aria-label={`${name} ${i + 1}세트 횟수`} type="number" inputMode="numeric" min="0" max="1000000" step="1" value={set.reps || ''} placeholder="0" onChange={e => {
               const n = Number(e.target.value);
               if (Number.isInteger(n) && n >= 0 && n <= 1000000) onChange(set.id, {
                 reps: n
               });
-            }} /></label>}
+            }} /><button type="button" aria-label={`${name} ${i + 1}세트 횟수 늘리기`} disabled={set.reps>=1000000} onClick={()=>onChange(set.id,{reps:stepReps(set.reps,1)})}>+</button></div></label>}
    <label className="field"><span>RPE · 선택</span><NativeSelect aria-label={`${name} ${i + 1}세트 RPE`} value={set.rpe} onChange={e => onChange(set.id, {
               rpe: Number(e.target.value)
             })}><option value={0}>미입력</option>{[5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}</NativeSelect></label></div>

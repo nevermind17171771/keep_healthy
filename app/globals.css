@@ -2552,3 +2552,29 @@ details summary {
 .rest-timer-main { flex-wrap: wrap; }
 .focus-rest { flex-wrap: wrap; }
 .focus-navigation > button { min-height: 48px; }
+
+/* Repetition steppers and image sharing */
+.strength-input-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 100px; }
+.focused-sets .strength-input-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+.workout-share-dialog { max-width: 620px; }
+.photo-save-guide { padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; font-size: 13px; line-height: 1.65; }
+.photo-save-guide p { margin: 5px 0 0; color: var(--muted-foreground); }
+.card-image-link { display: block; background: #12171c; border-radius: 12px; overflow: hidden; }
+.card-image-link img { display: block; width: 100%; max-height: 62vh; object-fit: contain; -webkit-touch-callout: default; user-select: auto; }
+.card-page-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.card-save-hint,.alarm-test-result { padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.alarm-test-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.rest-finished-banner { position: fixed; top: calc(env(safe-area-inset-top) + 12px); left: 50%; transform: translateX(-50%); z-index: 100; width: min(620px,calc(100% - 24px)); display: flex; align-items: center; gap: 10px; padding: 14px; background: var(--background); color: var(--foreground); border: 2px solid #f16b59; box-shadow: 0 10px 45px #0006; border-radius: 16px; }
+.rest-finished-banner > div { flex: 1; min-width: 0; }
+.rest-finished-banner strong { font-size: 16px; }
+.rest-finished-banner p { font-size: 12px; line-height: 1.5; margin: 6px 0 0; }
+.rest-finished-banner button { min-height: 44px; flex-shrink: 0; }
+@media(max-width:600px) {
+ .strength-input-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+ .strength-input-grid .field:last-child { grid-column: 1/-1; }
+ .strength-input-grid .weight-control { grid-template-columns: 36px minmax(0,1fr) 36px; }
+ .strength-input-grid .weight-control button { width: 36px; min-height: 48px; }
+ .rest-finished-banner { flex-wrap: wrap; }
+ .rest-finished-banner > div { flex-basis: calc(100% - 54px); }
+ .rest-finished-banner .secondary { order: 3; width: 100%; }
+}

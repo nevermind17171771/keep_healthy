@@ -1,3 +1,4 @@
+import { uid } from './id';
 import { defaultState, stateSchema, type AppState } from './model';
 import { same, reconcile, isWorkoutExtension } from './sync-merge';
 export type Remote = { state: AppState; revision: number; owner?: string };
@@ -80,7 +81,7 @@ export class WorkoutSync {
         if (!this.accept(next)) return;
       }
       for (let attempt = 0; this.snapshot.pending && attempt < 3; attempt++) {
-        if (!this.snapshot.outbox) this.snapshot.outbox = { id: crypto.randomUUID(), state: structuredClone(this.snapshot.state), revision: this.snapshot.revision };
+        if (!this.snapshot.outbox) this.snapshot.outbox = { id: uid(), state: structuredClone(this.snapshot.state), revision: this.snapshot.revision };
         const sent = this.snapshot.outbox;
         // Persist this exact operation BEFORE sending; edits made in flight stay in state.
         await this.save();

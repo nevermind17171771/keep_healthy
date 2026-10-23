@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { legacyCardioMetrics } from './legacy-cardio';
 import { recordingSettingsSchema, defaultRecording, type RecordingSettings } from './recording-settings';
 export const VERSION = 4;
-export const uid = () => crypto.randomUUID();
+import { uid } from './id';
+export { uid };
 const num = z.number().finite().min(0).max(1000000);
 const timestamp = z.number().finite().min(0).max(8640000000000000);
 export const cardioMetricsSchema = z.object({

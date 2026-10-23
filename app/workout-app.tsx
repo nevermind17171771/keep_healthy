@@ -15,6 +15,7 @@ import { Toaster, toast } from 'sonner';
 import MuscleMap from '@/components/muscle-map';
 import CardioSets from '@/components/cardio-sets';
 import StrengthSets from '@/components/strength-sets';
+import WorkoutShare from '@/components/workout-share';
 import { useRestTimer } from '@/lib/use-rest-timer';
 import FocusWorkout from '@/components/focus-workout';
 import RecordingEditor from '@/components/recording-editor';
@@ -99,6 +100,7 @@ export default function WorkoutApp({
     [recordFilter, setRecordFilter] = useState(''),
     [statsEx, setStatsEx] = useState(''),
     [statsEquipment, setStatsEquipment] = useState(''),
+    [cardSession, setCardSession] = useState<Session | null>(null),
     [shareSession, setShareSession] = useState<Session | null>(null),
     [backups, setBackups] = useState<{
       id: string;
@@ -130,7 +132,7 @@ export default function WorkoutApp({
     weekDays = new Set(weekSessions.map(s => day(s.date))).size;
   const recentBody = [...state.body].filter(b => !b.deletedAt).sort((a, b) => b.date.localeCompare(a.date));
   const matched = useMemo(() => EXERCISES.filter(e => (group === '전체' || e.group === group || e.primary.includes(group)) && (gearFilter === '전체' || e.equipment === gearFilter) && (!favOnly || state.favorites.includes(e.id)) && searchName(e.name, query)), [group, gearFilter, favOnly, query, state.favorites]);
-  const {restEnd,restLength,restRemaining,start:rest,adjust:adjustRest,cancel:cancelRest,testSound,testNotification} = useRestTimer(draft?.id,ready);
+  const {restEnd,restLength,restRemaining,start:rest,adjust:adjustRest,cancel:cancelRest,testSound,testNotification,finished:restFinished,dismiss:dismissRest,soundStatus,notificationStatus,testCountdown} = useRestTimer(draft?.id,ready);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
@@ -352,43 +354,7 @@ export default function WorkoutApp({
     setModal('');
     toast.success('루틴을 저장했어요.');
   }
-  function previewShare(s: Session) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1080;
-    canvas.height = 1440;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#121417';
-    ctx.fillRect(0, 0, 1080, 1440);
-    ctx.fillStyle = '#f06b58';
-    ctx.fillRect(72, 92, 58, 8);
-    ctx.font = '700 38px sans-serif';
-    ctx.fillText('KEEP HEALTHY', 72, 172);
-    ctx.fillStyle = '#f3f4f5';
-    ctx.font = '700 94px sans-serif';
-    ctx.fillText('오늘의 운동,', 72, 355);
-    ctx.fillText('완료.', 72, 472);
-    ctx.font = '500 40px sans-serif';
-    ctx.fillStyle = '#a9b0ba';
-    ctx.fillText(dateText(s.date), 72, 558);
-    ctx.fillStyle = '#f06b58';
-    ctx.font = '700 70px sans-serif';
-    ctx.fillText(`${Math.round(s.duration / 60)}분  ·  ${completedSets(s)}세트`, 72, 730);
-    ctx.font = '500 34px sans-serif';
-    ctx.fillStyle = '#e0e3e7';
-    s.exercises.filter(e => e.sets.some(x => x.done)).slice(0, 7).forEach((e, i) => ctx.fillText(e.name, 72, 850 + i * 55));
-    ctx.fillStyle = '#7e8793';
-    ctx.font = '26px sans-serif';
-    ctx.fillText('A little stronger, every session.', 72, 1320);
-    canvas.toBlob(b => {
-      if (!b) return;
-      const a = document.createElement('a');
-      const url = URL.createObjectURL(b);
-      a.href = url;
-      a.download = `keep-healthy-${day(s.date)}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    });
-  }
+  function previewShare(s: Session) { setModal(''); setCardSession(structuredClone(s)); }
   function quickInput() {
     const ex = EXERCISES.find(e => quickText.includes(e.name));
     const kg = quickText.match(/([\d.]+)\s*(?:kg|킬로|키로)/i),
@@ -469,11 +435,11 @@ export default function WorkoutApp({
     setPage(v);
     setPickerFor('session');
     setSwapId('');
-  }} className="app-shell"><Toaster richColors theme={state.profile.theme} position="top-center" /><input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={e => {
+  }} className="app-shell">{restFinished&&<div className="rest-finished-banner" role="alert"><div><strong>휴식 끝! 다음 세트를 시작해요.</strong><p>{soundStatus||"준비됐으면 다음 세트를 이어가세요."}</p></div><button className="secondary" onClick={()=>void testSound()}><Volume2 size={18}/>벨 울리기</button><button className="icon-button" aria-label="휴식 완료 안내 닫기" onClick={dismissRest}><X size={20}/></button></div>}<Toaster richColors theme={state.profile.theme} position="top-center" /><input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={e => {
       void readImport(e.target.files?.[0]);
       e.target.value = '';
     }} />
- <aside className="sidebar"><button className="brand" onClick={() => setPage('home')}><span className="brand-mark"><Activity size={21} /></span><span className="brand-words">KEEP<br /><b>HEALTHY</b></span></button><p className="nav-label">MY TRAINING</p><TabsList className="side-nav">{navItems.map(n => <TabsTrigger value={n.id} key={n.id} className="nav-item"><n.icon size={20} /><span>{n.name}</span>{page === n.id && <i />}</TabsTrigger>)}</TabsList><div className="sidebar-bottom"><div className="weekly-mini"><Flame size={19} /><span>이번 주 <b>{weekDays}</b> / {state.profile.weeklyTarget}일</span></div><button className={'nav-item ' + (page === 'settings' ? 'selected' : '')} onClick={() => setPage('settings')}><Settings2 size={19} />설정·데이터</button><div className="identity"><span className="avatar">{state.profile.name?.[0] || 'K'}</span><div><strong>{state.profile.name || '나의 트레이닝'}</strong><small>KEEP HEALTHY · 4.0</small></div></div></div></aside>
+ <aside className="sidebar"><button className="brand" onClick={() => setPage('home')}><span className="brand-mark"><Activity size={21} /></span><span className="brand-words">KEEP<br /><b>HEALTHY</b></span></button><p className="nav-label">MY TRAINING</p><TabsList className="side-nav">{navItems.map(n => <TabsTrigger value={n.id} key={n.id} className="nav-item"><n.icon size={20} /><span>{n.name}</span>{page === n.id && <i />}</TabsTrigger>)}</TabsList><div className="sidebar-bottom"><div className="weekly-mini"><Flame size={19} /><span>이번 주 <b>{weekDays}</b> / {state.profile.weeklyTarget}일</span></div><button className={'nav-item ' + (page === 'settings' ? 'selected' : '')} onClick={() => setPage('settings')}><Settings2 size={19} />설정·데이터</button><div className="identity"><span className="avatar">{state.profile.name?.[0] || 'K'}</span><div><strong>{state.profile.name || '나의 트레이닝'}</strong><small>KEEP HEALTHY · 4.5</small></div></div></div></aside>
  <div className="workspace"><header className="topbar"><span className="breadcrumb">나의 트레이닝 <ChevronRight size={14} /> {page === 'session' ? '진행 중' : navItems.find(n => n.id === page)?.name || '설정'}</span><div className="top-actions"><button className="sync-label" onClick={() => void sync()} aria-label="지금 동기화">{status === '동기화 완료' ? <Cloud size={15} /> : <CloudOff size={15} />}<span>{status}</span></button><button className="icon-button" aria-label="설정 열기" onClick={() => setPage('settings')}><Settings2 size={20} /></button></div></header>
  <main className="main-content">
  {readOnly && <div className="notice"><Info size={18}/><span>다른 창에서 운동을 기록 중이에요. 그 창을 닫고 이 화면으로 돌아오면 이어서 기록할 수 있어요.</span></div>}
@@ -723,7 +689,7 @@ export default function WorkoutApp({
                     const x = a.sessions.find(x => x.id === s.id)!;
                     delete x.deletedAt;
                     x.updatedAt = Date.now();
-                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식은 앱을 다시 열어도 남은 시간을 복원해요. 앱이 실행되는 동안 벨과 알림을 보내요. 다른 앱 사용·화면 잠금으로 실행이 멈추면 알림이 늦을 수 있으며, 현재 백그라운드 예약 푸시는 지원하지 않아요.</p><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={()=>void testSound()}><Volume2 size={16} />벨 테스트</button></div><button className="secondary" onClick={()=>void testNotification()}>알림 권한 · 배너 테스트</button><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.4 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
+                  })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식은 앱을 다시 열어도 남은 시간을 복원해요. 앱이 실행되는 동안 벨과 알림을 보내요. 다른 앱 사용·화면 잠금으로 실행이 멈추면 알림이 늦을 수 있으며, 현재 백그라운드 예약 푸시는 지원하지 않아요.</p><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={()=>void testSound()}><Volume2 size={16} />벨 테스트</button></div><p className="micro">벨 테스트: 복싱 벨이 바로 3번 울리는지 확인해요. 배너 테스트: 알림 허용을 요청하고 휴대폰 알림센터로 테스트 알림을 보내요.</p><div className="alarm-test-actions"><button className="secondary" onClick={()=>void testNotification()}>알림 권한 · 배너 테스트</button><button className="secondary" disabled={restRemaining>0} onClick={testCountdown}>5초 휴식 테스트</button></div>{soundStatus&&<p className="alarm-test-result" role="status">{soundStatus}</p>}{notificationStatus&&<p className="alarm-test-result" role="status">{notificationStatus}</p>}<p className="micro">5초 휴식 테스트는 화면을 켠 채로 확인해 주세요. 백그라운드 예약 알림을 검사하는 기능은 아니에요.</p><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.5 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
  {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
@@ -968,6 +934,7 @@ export default function WorkoutApp({
           setPage('session');
         }}><Field label="운동 이름"><input name="name" maxLength={100} required placeholder="기록할 중량 운동 이름" /></Field><p className="micro">직접 추가한 종목은 중량 × 횟수로 기록해요. 근육 타겟은 임의로 지정하지 않아요.</p><button type="submit" className="primary full">운동 추가</button></form>}
  </DialogContent></Dialog>
+ <>{cardSession&&<WorkoutShare key={cardSession.id} state={state} session={cardSession} onClose={()=>setCardSession(null)}/>}</>
  <AlertDialog open={!!confirm} onOpenChange={v => {
       if (!v) setConfirm(null);
     }}><AlertDialogContent className="app-dialog"><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.detail}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction className="primary" onClick={() => {

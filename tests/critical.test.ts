@@ -278,3 +278,5 @@ test('upgrading an older cache recovers a proven continuation without a false ot
  const server=defaultState();server.draft=startSession(server,server.routines[0]);server.draft.exercises[0].sets[0].done=true;const local=structuredClone(server);local.draft!.exercises[0].sets[1].done=true;local.draft!.updatedAt+=1;
  const engine=new WorkoutSync({persist:async()=>{},notify:()=>{},request:async outbox=>outbox?{status:200,data:{revision:3,owner:'u'}}:{status:200,data:{state:server,revision:2,owner:'u'}}});engine.restore({state:local,revision:1,pending:true});await engine.sync();assert.equal(engine.conflict,null);assert.equal(engine.snapshot.pending,false);assert.ok(engine.snapshot.state.draft!.exercises[0].sets[1].done);assert.equal(engine.snapshot.state.recoveredDrafts.length,0);
 });
+
+import './workout-card.test';
