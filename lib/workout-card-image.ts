@@ -13,54 +13,32 @@ export function wrapCardText(value:string,width:number,size:number):string[]{
   }
   if(line)lines.push(line.trimEnd());return lines.length?lines:[''];
 }
+/** One phone-sized summary; never shrink text or add another page. */
 export function workoutCardPages(card:WorkoutCard):CardPage[]{
-  const width=1080,maxHeight=3200,padding=64,content=952;
-  const pages:{parts:string[];y:number}[]=[];
-  let page:{parts:string[];y:number}={parts:[],y:0};
-  const text=(value:string,x:number,y:number,size=28,color='#f3f4f5',weight=400)=>`<text x="${x}" y="${y}" font-size="${size}" fill="${color}" font-weight="${weight}">${escape(value)}</text>`;
-  const line=(value:string,size=28,color='#f3f4f5',weight=400,x=padding,w=content)=>{for(const valueLine of wrapCardText(value,w,size)){page.parts.push(text(valueLine,x,page.y+size,size,color,weight));page.y+=size*1.42;}};
-  const newPage=(first=false)=>{
-    page={parts:[],y:62};pages.push(page);
-    page.parts.push('<rect x="64" y="58" width="44" height="6" rx="3" fill="#f16b59"/>');page.y=104;
-    page.parts.push(text('KEEP HEALTHY',64,page.y,26,'#f16b59',700),text(card.date,794,page.y,23,'#a9b0ba'));
-    page.y=145;line(first?'오늘 운동, 완료.':'오늘의 운동 기록',first?58:44,'#f3f4f5',750);line(card.name,28,'#a9b0ba');page.y+=24;
-    if(!first)return;
-    const stats=[['운동 시간',`${card.durationMinutes}분`],['본·드롭 세트',`${card.workSets}세트`],['중량 볼륨',`${new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}).format(card.volume)} kg·회`]];
-    for(let i=0;i<stats.length;i++){const x=padding+i*324;page.parts.push(`<rect x="${x}" y="${page.y}" width="304" height="118" rx="16" fill="#20252b"/>`,text(stats[i][0],x+22,page.y+35,22,'#a9b0ba'),text(stats[i][1],x+22,page.y+85,stats[i][1].length>12?27:34,'#f3f4f5',700));}
-    page.y+=148;const mapY=page.y;
-    page.parts.push(`<g transform="translate(52 ${mapY})">${muscleMapSvg(card.primary,card.secondary,440,380)}</g>`);
-    page.y=mapY+12;line('MUSCLE FOCUS',21,'#f16b59',700,530,485);page.y+=8;
-    line(card.muscleLabels.join(' · ')||'지정된 주동근 없음',26,'#f3f4f5',600,530,485);page.y+=18;
-    line(card.completion,25,'#f3f4f5',600,530,485);line(card.effort,22,'#a9b0ba',400,530,485);page.y+=10;
-    line(card.comparison,22,'#d5ab65',400,530,485);
-    page.y=Math.max(page.y,mapY+397);
-    page.parts.push(text('● 주동근',64,page.y+20,20,'#f16b59'),text('● 보조근',190,page.y+20,20,'#d5ab65'));page.y+=42;
-    line(`유산소 ${card.cardioIntervals}구간 · 워밍업 ${card.warmups}세트 별도 · 완료한 기록만 표시`,22,'#a9b0ba');page.y+=30;
-  };
-  newPage(true);
-  for(const [index,row] of card.rows.entries()){
-    const header=()=>{
-      const names=wrapCardText(`${String(index+1).padStart(2,'0')}  ${row.name}`,content,31);
-      const meta=wrapCardText([row.muscles,row.equipment].filter(Boolean).join(' · '),content,21);
-      const height=names.length*44+meta.length*30+15;
-      if(page.y+height+74>maxHeight-110)newPage();
-      page.parts.push(`<path d="M64 ${page.y}H1016" stroke="#343c45"/>`);page.y+=20;
-      line(`${String(index+1).padStart(2,'0')}  ${row.name}`,31,'#f3f4f5',700);line([row.muscles,row.equipment].filter(Boolean).join(' · '),21,'#a9b0ba');page.y+=10;
-    };
-    header();
-    for(const raw of row.lines){
-      for(const value of wrapCardText(raw,content-24,27)){
-        if(page.y+40>maxHeight-110){newPage();header();}
-        page.parts.push(text(value,88,page.y+28,27,'#dfe3e8'));page.y+=39;
-      }
-    }
-    page.y+=25;
-  }
-  if(!card.rows.length)line('완료한 세트가 없어요.',28,'#a9b0ba');
-  return pages.map((p,i)=>{
-    const height=Math.max(1350,Math.ceil(p.y+115));
-    return {width,height,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#12171c"/><g font-family="${font}">${p.parts.join('')}${text('기록한 중량 기준 · 워밍업/보조중량/유산소는 중량 볼륨 제외',64,height-62,18,'#88939e')}${text(`KEEP GOING.  ${i+1} / ${pages.length}`,64,height-29,18,'#88939e')}</g></svg>`};
+  const width=1080,height=1920,parts:string[]=[];
+  const text=(value:string,x:number,y:number,size=36,color='#f3f4f5',weight=400)=>`<text x="${x}" y="${y}" font-size="${size}" fill="${color}" font-weight="${weight}">${escape(value)}</text>`;
+  const fit=(value:string,w:number,size:number)=>{const lines=wrapCardText(value,w,size);return lines.length>1?lines[0].slice(0,-1)+'…':lines[0];};
+  const box=(x:number,y:number,w:number,h:number,fill='#20272e')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="22" fill="${fill}"/>`;
+  parts.push('<rect width="1080" height="1920" fill="#12171c"/>',text('KEEP HEALTHY',64,88,30,'#f16b59',750),text(card.date,788,88,28,'#a9b0ba'));
+  parts.push(text('오늘 운동, 완료.',64,185,78,'#f3f4f5',750),text(fit(card.name,952,38),64,244,38,'#b8c0c9'));
+  const stats=[['운동 시간',`${card.durationMinutes}분`],['본·드롭 세트',`${card.workSets}세트`],['중량 볼륨',`${new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}).format(card.volume)} kg·회`]];
+  stats.forEach(([label,value],i)=>{const x=64+i*324;parts.push(box(x,282,304,136),text(label,x+22,327,29,'#a9b0ba'),text(fit(value,262,38),x+22,382,38,'#f3f4f5',700));});
+  parts.push(box(64,448,952,324,'#1a2128'),`<g transform="translate(78 464)">${muscleMapSvg(card.primary,card.secondary,340,294)}</g>`,text('오늘 운동한 부위',460,508,32,'#a9b0ba'));
+  const labels=card.muscleLabels.slice(0,5).join(' · ')+(card.muscleLabels.length>5?` · 외 ${card.muscleLabels.length-5}부위`:'');
+  const muscleLines=wrapCardText(labels||'지정된 주동근 없음',504,36);
+  muscleLines.slice(0,3).forEach((line,i)=>parts.push(text(i===2&&muscleLines.length>3?line.slice(0,-1)+'…':line,460,566+i*49,36,'#f3f4f5',650)));
+  parts.push(text('● 주동근',460,730,26,'#f16b59'),text('● 보조근',670,730,26,'#d5ab65'));
+  parts.push(text('WORKOUT SUMMARY',64,835,28,'#a9b0ba',650),text(`${card.rows.length}종목`,882,835,30,'#f16b59',700));
+  const shown=card.rows.slice(0,8),gap=Math.min(160,920/Math.max(shown.length,1));
+  shown.forEach((row,i)=>{
+    const y=861+i*gap;
+    parts.push(`<path d="M64 ${y}H1016" stroke="#343c45"/>`,text(String(i+1).padStart(2,'0'),64,y+43,28,'#f16b59',700),text(fit(row.name,872,40),134,y+43,40,'#f3f4f5',650),text(fit(row.summary,882,36),134,y+92,36,'#bdc7d2'));
   });
+  if(!shown.length)parts.push(text('완료한 본세트가 없어요.',64,950,40,'#a9b0ba'));
+  const omitted=card.rows.length-shown.length;
+  parts.push(text(omitted?`외 ${omitted}종목 · 전체 기록은 앱에서 확인`:'완료한 본·드롭 세트 기준 · 자세한 기록은 앱에서',64,1835,28,'#a9b0ba'));
+  parts.push(text(`유산소 ${card.cardioIntervals}구간 · 워밍업 ${card.warmups}세트 별도`,64,1880,27,'#88939e'));
+  return [{width,height,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g font-family="${font}">${parts.join('')}</g></svg>`}];
 }
 export async function renderWorkoutCard(page:CardPage):Promise<Blob>{
   const source=URL.createObjectURL(new Blob([page.svg],{type:'image/svg+xml;charset=utf-8'}));

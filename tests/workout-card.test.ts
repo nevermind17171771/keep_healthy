@@ -10,33 +10,27 @@ import {BellPlayer} from '../lib/bell-player';
 import {boxingBellWav} from '../lib/round-bell';
 const ex=(name:string)=>{const x=EXERCISES.find(e=>e.name===name);assert.ok(x);return x;};
 function fixture(){const state=defaultState(),s=startSession(state);s.date='2026-10-23T01:00:00Z';s.duration=3600;delete s.startedAt;s.exercises=[{id:'row',exerciseId:ex('바벨 벤치프레스').id,name:'바벨 벤치프레스',equipmentId:'',note:'',rest:90,superset:'',sets:[makeSet({weight:40,reps:12,done:true,rpe:8}),makeSet({weight:30,reps:15,done:true,kind:'drop',rpe:9}),makeSet({weight:20,reps:20,done:true,kind:'warmup'}),makeSet({weight:90,reps:10,done:false})]}];state.sessions=[s];return {state,s};}
-test('card totals and highlights use completed work; warmups and unfinished loads stay separate',()=>{
+test('card summarizes completed work without RPE, warmup rows or unfinished loads',()=>{
  const {state,s}=fixture(),card=workoutCardData(state,s);
- assert.equal(card.volume,930);assert.equal(card.workSets,2);assert.equal(card.warmups,1);assert.equal(card.durationMinutes,60);assert.equal(card.completion,'2/3 완료 · 67%');assert.equal(card.effort,'평균 RPE 8.5 · 2세트 입력');assert.equal(card.rows[0].lines.length,3);assert.match(card.rows[0].lines[0],/40kg × 12회 · RPE 8/);assert.match(card.rows[0].lines[2],/워밍업/);assert.doesNotMatch(card.rows[0].lines.join(' '),/90kg/);
- s.exercises[0].sets.forEach(x=>x.kind='warmup');assert.deepEqual(workoutCardData(state,s).primary,[]);
+ assert.equal(card.volume,930);assert.equal(card.workSets,2);assert.equal(card.warmups,1);assert.equal(card.durationMinutes,60);assert.equal(card.rows[0].summary,'30–40kg · 12–15회 · 2세트');assert.doesNotMatch(JSON.stringify(card),/RPE|effort|90kg/);
+ s.exercises[0].sets.forEach(x=>x.kind='warmup');const warmup=workoutCardData(state,s);assert.deepEqual(warmup.primary,[]);assert.deepEqual(warmup.rows,[]);
 });
-test('card preserves recorded lb/pair units and machine metrics without inventing calories',()=>{
+test('identical sets collapse to load, repetitions and set count',()=>{
+ const {state,s}=fixture();s.exercises[0].sets=Array.from({length:3},()=>makeSet({weight:60,reps:10,done:true,rpe:8}));assert.equal(workoutCardData(state,s).rows[0].summary,'60kg × 10회 × 3세트');s.exercises[0].sets.forEach(x=>x.weight=60.25);assert.equal(workoutCardData(state,s).rows[0].summary,'60.25kg × 10회 × 3세트');
+});
+test('card preserves lb/pair units and selects concise cardio duration, distance and incline',()=>{
  const {state,s}=fixture(),row=s.exercises[0],settings={...defaultRecording(true),weightUnit:'lb' as const,weightBasis:'pair' as const};
- row.recording=settings;row.sets=[makeSet({weight:toStoredWeight(80,settings),reps:10,done:true})];assert.match(workoutCardData(state,s).rows[0].lines[0],/80lb \(양쪽 합계\) × 10회/);
+ row.recording=settings;row.sets=[makeSet({weight:toStoredWeight(80,settings),reps:10,done:true})];assert.match(workoutCardData(state,s).rows[0].summary,/양쪽 80lb × 10회 × 1세트/);
  const incline=ex('인클라인 트레드밀 워크');s.exercises.push({...row,id:'cardio',name:incline.name,exerciseId:incline.id,recording:defaultRecording(),sets:[makeSet({duration:1200,distance:2,done:true,metrics:{incline:0,speed:6,elevationGain:150}})]});
- const card=workoutCardData(state,s);assert.equal(card.workSets,1);assert.equal(card.cardioIntervals,1);assert.match(card.rows[1].lines[0],/경사 0%/);assert.match(card.rows[1].lines[0],/150m/);assert.doesNotMatch(card.rows[1].lines[0],/칼로리/);
+ const card=workoutCardData(state,s);assert.equal(card.workSets,1);assert.equal(card.cardioIntervals,1);assert.equal(card.rows[1].summary,'20분 · 2km · 경사 0%');assert.doesNotMatch(card.rows[1].summary,/kcal/);
 });
-test('assistance and bodyweight never inflate card volume or hide their meaning',()=>{
+test('assistance and bodyweight retain meaning and do not inflate volume',()=>{
  const {state,s}=fixture(),row=s.exercises[0];const assisted=EXERCISES.find(e=>e.type==='assisted')!,body=EXERCISES.find(e=>e.type==='bodyweight')!;
- s.exercises=[{...row,exerciseId:assisted.id,name:assisted.name,sets:[makeSet({weight:30,reps:8,done:true})]},{...row,id:'body',exerciseId:body.id,name:body.name,sets:[makeSet({weight:0,reps:12,done:true})]}];const card=workoutCardData(state,s);assert.equal(card.volume,0);assert.match(card.rows[0].lines[0],/보조 30kg/);assert.match(card.rows[1].lines[0],/맨몸 × 12회/);assert.equal(card.effort,'RPE 미입력');
+ s.exercises=[{...row,exerciseId:assisted.id,name:assisted.name,sets:[makeSet({weight:30,reps:8,done:true})]},{...row,id:'body',exerciseId:body.id,name:body.name,sets:[makeSet({weight:0,reps:12,done:true})]}];const card=workoutCardData(state,s);assert.equal(card.volume,0);assert.match(card.rows[0].summary,/보조 30kg/);assert.match(card.rows[1].summary,/맨몸 × 12회/);
 });
-test('card comparison only uses previous same gym and equipment, not future/deleted/current records',()=>{
- const {state,s}=fixture();s.exercises[0].sets=[makeSet({weight:40,reps:12,done:true})];
- const old=structuredClone(s);old.id='old';old.date='2026-10-20T01:00:00Z';old.exercises[0].sets[0].reps=10;
- const other=structuredClone(old);other.id='other';other.date='2026-10-22T01:00:00Z';other.gymId='other-gym';other.exercises[0].sets[0].reps=100;
- const future=structuredClone(other);future.id='future';future.date='2026-10-25T01:00:00Z';future.gymId=s.gymId;
- const deleted=structuredClone(future);deleted.id='deleted';deleted.date='2026-10-22T01:00:00Z';deleted.deletedAt=1;
- state.sessions.push(old,other,future,deleted);assert.equal(workoutCardData(state,s).comparison,'같은 중량 최고 반복수 ↑ 1/1종목');
- old.exercises[0].equipmentId='another-machine';assert.match(workoutCardData(state,s).comparison,/기록 없음/);
-});
-test('long cards paginate every set, escape names, and keep page bounds finite',()=>{
- const {state,s}=fixture(),card=workoutCardData(state,s);card.name='<test & card>';card.rows=Array.from({length:24},(_,i)=>({name:`종목${i+1}`,muscles:'대흉근',equipment:'',lines:Array.from({length:12},(_,j)=>`UNIQUE_${i}_${j} 40kg × 10회`)}));
- const pages=workoutCardPages(card),svg=pages.map(p=>p.svg).join('');assert.ok(pages.length>1);assert.ok(pages.every(p=>p.width===1080&&p.height>=1350&&p.height<3250));assert.match(svg,/&lt;test &amp; card&gt;/);assert.ok(!svg.includes('<test & card>'));for(let i=0;i<24;i++)for(let j=0;j<12;j++)assert.equal(svg.split(`UNIQUE_${i}_${j} `).length-1,1);assert.ok(wrapCardText('가'.repeat(100),200,20).every(s=>s.length<=10));
+test('even long workouts produce one fixed phone card with an explicit omitted count',()=>{
+ const {state,s}=fixture(),card=workoutCardData(state,s);card.name='<test & card>';card.rows=Array.from({length:24},(_,i)=>({name:`종목${i+1}`,summary:'40kg × 10회 × 3세트',sets:3}));
+ const pages=workoutCardPages(card),svg=pages[0].svg;assert.equal(pages.length,1);assert.equal(pages[0].width,1080);assert.equal(pages[0].height,1920);assert.match(svg,/외 16종목/);assert.match(svg,/24종목/);assert.match(svg,/&lt;test &amp; card&gt;/);assert.doesNotMatch(svg,/RPE|평균|최고 반복수/);assert.ok(wrapCardText('가'.repeat(100),200,20).every(s=>s.length<=10));
 });
 test('card and main body map share distinct lats, shoulder heads, and highlight priority',()=>{
  assert.deepEqual(muscleRegionIds('back','upper-back','back-upper-back-left-1'),['lats']);assert.deepEqual(muscleRegionIds('back','deltoids','any'),['back-deltoids']);assert.deepEqual(muscleRegionIds('front','deltoids','any'),['front-deltoids','side-deltoids']);assert.equal(muscleFill(['chest'],['chest'],['chest']),'#f16b59');
