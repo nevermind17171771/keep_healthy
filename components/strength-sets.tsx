@@ -42,6 +42,7 @@ export default function StrengthSets({
             weight: set.target!.weight,
             reps: set.target!.reps
           })}>목표값 입력</button>}</div>
+   {index!==undefined && prior && <div className="set-comparison"><span>지난번 <b>{summary(prior)}</b></span><span aria-hidden="true">→</span><span>{set.done?'오늘 완료':'오늘 입력'} <b>{summary(set)}</b></span>{!timed && prior.weight===set.weight && set.reps!==prior.reps && <small>같은 중량 · {set.reps>prior.reps?'+':''}{set.reps-prior.reps}회</small>}</div>}
    <div className="strength-input-grid"><label className="field"><span>{timed ? '시간 (분:초)' : `${type === 'assisted' ? '보조 ' : type === 'bodyweight' ? '추가 ' : ''}${weightLabel(recording)}`}</span>{timed ? <input aria-label={`${name} ${i + 1}세트 시간`} key={String(set.duration)} defaultValue={timeLabel(set.duration)} placeholder="00:30" inputMode="text" onBlur={e => {
               if (!/^\d{1,3}:[0-5]\d$/.test(e.target.value)) {
                 toast.error('분:초 형식으로 입력하세요.');

@@ -67,7 +67,7 @@ export function useWorkout() {
     };
     const saveBeforeHide = () => { if (editing.current && engine.snapshot.pending) void engine.sync(); };
     const visibility = () => document.visibilityState === 'visible' ? resume() : saveBeforeHide();
-    const interval = setInterval(() => { if (editing.current && engine.snapshot.pending && document.visibilityState === 'visible') void engine.sync(); }, 2500);
+    const interval = setInterval(() => { if (editing.current && engine.snapshot.pending && !engine.needsLogin && document.visibilityState === 'visible') void engine.sync(); }, 2500);
     window.addEventListener('online', resume);
     window.addEventListener('focus', resume);
     window.addEventListener('pageshow', resume);

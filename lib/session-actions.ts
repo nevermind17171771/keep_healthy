@@ -65,3 +65,14 @@ export function chooseEquipment(state: AppState, item: SessionExercise, equipmen
   }));
   return true;
 }
+
+/** Reorder pending exercise slots only; completed exercises and records stay intact. */
+export function deferExercise(session: import('./model').Session, id: string): string | null {
+  const indices=session.exercises.map((e,i)=>e.sets.some(s=>!s.done)?i:-1).filter(i=>i>=0);
+  const at=indices.findIndex(i=>session.exercises[i].id===id);
+  if(at<0||indices.length<2)return null;
+  const pending=indices.map(i=>session.exercises[i]);
+  const [moved]=pending.splice(at,1);pending.push(moved);
+  indices.forEach((index,i)=>{session.exercises[index]=pending[i];});
+  return pending[Math.min(at,pending.length-2)].id;
+}

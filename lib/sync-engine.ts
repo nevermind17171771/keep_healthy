@@ -16,6 +16,7 @@ export class WorkoutSync {
   status = '기록 불러오는 중';
   error = '';
   needsLogin = false;
+  private localSaveFailed = false;
   private queue = Promise.resolve();
   private running: Promise<void> | null = null;
   constructor(private deps: Dependencies) {}
@@ -23,7 +24,7 @@ export class WorkoutSync {
   private publish() { this.deps.notify(); }
   private save() {
     const value = structuredClone(this.snapshot);
-    this.queue = this.queue.catch(() => {}).then(() => this.deps.persist(value));
+    this.queue = this.queue.catch(() => {}).then(() => this.deps.persist(value).then(()=>{this.localSaveFailed=false;},error=>{this.localSaveFailed=true;throw error;}));
     return this.queue;
   }
   edit(fn: (state: AppState) => void) {
@@ -34,9 +35,9 @@ export class WorkoutSync {
     this.snapshot.state = checked.data; this.snapshot.pending = true;
     this.status = '기기에 저장 중'; this.publish();
     void this.save().then(() => {
-      if (this.snapshot.pending && !this.conflict) this.status = '기기에 저장됨 · 동기화 대기';
+      if (this.snapshot.pending && !this.conflict) this.status = this.needsLogin ? '기기에 저장됨 · 로그인 후 동기화' : '기기에 저장됨 · 동기화 대기';
       this.publish();
-    }).catch(() => { this.error = '기기 저장에 실패했어요. 화면의 기록을 JSON 백업으로 내보내 주세요.'; this.publish(); });
+    }).catch(() => { this.status = '기기 저장 실패 · 백업 필요'; this.error = '기기 저장에 실패했어요. 화면의 기록을 JSON 백업으로 내보내 주세요.'; this.publish(); });
     return true;
   }
   private accept(next: Remote) {
@@ -102,9 +103,9 @@ export class WorkoutSync {
       }
       this.error = '';
       await this.save();
-      this.status = this.snapshot.pending ? '기기에 저장됨 · 동기화 대기' : '동기화 완료';
+      this.status = this.snapshot.pending ? '기기에 저장됨 · 동기화 대기' : '계정에 동기화됨';
     } catch (e) {
-      this.status = this.needsLogin ? '로그인 필요 · 기기 기록 유지' : this.snapshot.pending ? '기기에 저장됨 · 동기화 대기' : '오프라인 · 기기 기록';
+      this.status = this.localSaveFailed ? '기기 저장 실패 · 백업 필요' : this.needsLogin ? '로그인 후 동기화 · 기록 계속 가능' : this.snapshot.pending ? '기기에 저장됨 · 동기화 대기' : '오프라인 · 기기 기록';
       this.error = e instanceof Error && e.name !== 'AbortError' ? e.message : '연결이 지연돼요. 기록을 유지하고 연결되면 다시 저장해요.';
     } finally { this.publish(); }
   }

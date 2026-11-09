@@ -2578,3 +2578,9 @@ details summary {
  .rest-finished-banner > div { flex-basis: calc(100% - 54px); }
  .rest-finished-banner .secondary { order: 3; width: 100%; }
 }
+
+.set-comparison { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:12px 0; font-size:13px; }
+.set-comparison span { display:flex; gap:6px; align-items:center; }
+.set-comparison small { flex-basis:100%; color:var(--accent); }
+.focus-workout > .text-button { justify-self:start; min-height:44px; }
+.focus-exercise > .danger { min-height:44px; margin:4px 0; }

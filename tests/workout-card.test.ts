@@ -40,17 +40,23 @@ test('boxing bell PCM file declares playable mono samples with nonzero audio',()
  const wav=boxingBellWav(8000),view=new DataView(wav);assert.equal(new TextDecoder().decode(wav.slice(0,4)),'RIFF');assert.equal(view.getUint32(4,true),wav.byteLength-8);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(24,true),8000);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.ok(new Int16Array(wav,44).some(x=>Math.abs(x)>100));
 });
 function fakeContext(){let started=0;const context:any={state:'running',sampleRate:8000,destination:{},close:async()=>{context.state='closed';},resume:async()=>{context.state='running';},createBuffer:(_c:number,n:number)=>({getChannelData:()=>new Float32Array(n)}),createGain:()=>({gain:{value:0},connect(){},disconnect(){}}),createBufferSource:()=>({connect(){},disconnect(){},start(){started++;},stop(){}})};return {context,started:()=>started};}
-function media(play:()=>Promise<void>){return {play,pause(){},currentTime:0,muted:false,volume:1,preload:''} as HTMLAudioElement;}
-test('bell falls back from rejected media to Web Audio and replaces interrupted context',async()=>{
- const contexts:ReturnType<typeof fakeContext>[]=[];const player=new BellPlayer(()=>{const c=fakeContext();contexts.push(c);return c.context;},()=>media(async()=>{throw Error('blocked');}));
- assert.equal(await player.play(),true);assert.equal(contexts[0].started(),1);contexts[0].context.state='interrupted';assert.equal(await player.play(),true);assert.equal(contexts.length,2);assert.equal(contexts[0].context.state,'closed');assert.equal(contexts[1].started(),1);player.dispose();
+test('bell primes without starting audio and never claims playback focus',async()=>{
+ const c=fakeContext(),session={type:'auto'};
+ const prior=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+ Object.defineProperty(globalThis,'navigator',{configurable:true,value:{audioSession:session}});
+ try { const player=new BellPlayer(()=>c.context);player.prime();assert.equal(c.started(),0);assert.equal(session.type,'ambient');assert.equal(await player.play(),true);assert.equal(c.started(),1);player.dispose(); }
+ finally {if(prior)Object.defineProperty(globalThis,'navigator',prior);else delete (globalThis as any).navigator;}
 });
-test('cancelled delayed audio cannot trigger a fallback bell after dismissal',async()=>{
- let resolve!:()=>void;const c=fakeContext(),player=new BellPlayer(()=>c.context,()=>media(()=>new Promise<void>(r=>{resolve=r;})));
+test('bell replaces interrupted context without an exclusive media fallback',async()=>{
+ const contexts:ReturnType<typeof fakeContext>[]=[];const player=new BellPlayer(()=>{const c=fakeContext();contexts.push(c);return c.context;});
+ assert.equal(await player.play(),true);contexts[0].context.state='interrupted';assert.equal(await player.play(),true);assert.equal(contexts.length,2);assert.equal(contexts[0].context.state,'closed');player.dispose();
+});
+test('cancelled delayed context resume cannot ring after dismissal',async()=>{
+ let resolve!:()=>void;const c=fakeContext();c.context.state='suspended';c.context.resume=()=>new Promise<void>(r=>{resolve=()=>{c.context.state='running';r();};});const player=new BellPlayer(()=>c.context);
  const playing=player.play();player.stop();resolve();assert.equal(await playing,false);assert.equal(c.started(),0);player.dispose();
 });
-test('audio failures return a result instead of rejecting the rest completion flow',async()=>{
- const c=fakeContext();c.context.state='suspended';c.context.resume=()=>{throw Error('interrupted');};const player=new BellPlayer(()=>c.context,()=>media(async()=>{throw Error('blocked');}));assert.equal(await player.play(),false);player.dispose();
+test('audio failure returns false without replacing the music player',async()=>{
+ const c=fakeContext();c.context.state='suspended';c.context.resume=()=>{throw Error('interrupted');};const player=new BellPlayer(()=>c.context);assert.equal(await player.play(),false);player.dispose();
 });
 
 import {uid} from '../lib/id';

@@ -280,3 +280,16 @@ test('upgrading an older cache recovers a proven continuation without a false ot
 });
 
 import './workout-card.test';
+
+import {deferExercise} from '../lib/session-actions';
+test('defer keeps completed slots and every set intact while rotating pending exercises',()=>{
+ const state=defaultState(),s=startSession(state,state.routines[0]);
+ s.exercises[1].sets.forEach(x=>x.done=true);
+ const completed=s.exercises[1].id,first=s.exercises[0].id,before=structuredClone(s.exercises);
+ const next=deferExercise(s,first);
+ assert.equal(s.exercises[1].id,completed);assert.notEqual(next,first);
+ assert.equal(s.exercises.filter(e=>e.sets.some(x=>!x.done)).at(-1)!.id,first);
+ for(const row of before)assert.deepEqual(s.exercises.find(e=>e.id===row.id),row);
+ assert.equal(deferExercise(s,completed),null);
+});
+import './service-worker.test';

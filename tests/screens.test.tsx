@@ -40,3 +40,8 @@ import ProgramLibrary from '../components/program-library';
 test('program library renders reviewable order, volume, alternatives and opt-in schedule replacement',()=>{
  const html=renderToString(<ProgramLibrary onImport={()=>true}/>);assert.match(html,/프로그램 선택/);assert.match(html,/직접 세트/);assert.match(html,/보조 참여/);assert.match(html,/주간 계획도 교체/);assert.match(html,/대체 운동/);assert.match(html,/기존 기본 루틴 개정본 15개/);assert.doesNotMatch(html,/CBum/);
 });
+test('focus retains add-set control after deleting the final set',()=>{
+ const state=structuredClone(fixture),session=state.draft!;session.exercises=[session.exercises[0]];session.exercises[0].sets=[];
+ const html=renderToString(<FocusWorkout state={state} session={session} restRemaining={0} onSkipRest={()=>{}} onExtendRest={()=>{}} onChange={()=>{}} onComplete={()=>{}} onSettings={()=>{}} onEquipment={()=>{}} onTargets={()=>{}} onAddSet={()=>{}} onRest={()=>{}} onNotes={()=>{}}/>);
+ assert.match(html,/세트가 없어요/);assert.match(html,/세트 추가/);assert.doesNotMatch(html,/NaN/);
+});

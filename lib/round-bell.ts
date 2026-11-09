@@ -22,7 +22,7 @@ export function boxingBellSamples(sampleRate: number): Float32Array {
 }
 const buffers = new WeakMap<AudioContext, AudioBuffer>();
 const active = new WeakMap<AudioContext, AudioBufferSourceNode>();
-export async function playRoundBell(context: AudioContext) {
+export async function playRoundBell(context: AudioContext, volume = .5) {
   if (context.state === 'suspended') await context.resume();
   if (context.state !== 'running') return false;
   let buffer = buffers.get(context);
@@ -41,7 +41,7 @@ export async function playRoundBell(context: AudioContext) {
   const source = context.createBufferSource(),
     gain = context.createGain();
   source.buffer = buffer;
-  gain.gain.value = .5;
+  gain.gain.value = Math.max(0, Math.min(1, volume));
   source.connect(gain);
   gain.connect(context.destination);
   active.set(context, source);
