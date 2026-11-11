@@ -2584,3 +2584,6 @@ details summary {
 .set-comparison small { flex-basis:100%; color:var(--accent); }
 .focus-workout > .text-button { justify-self:start; min-height:44px; }
 .focus-exercise > .danger { min-height:44px; margin:4px 0; }
+.focus-rest > .focus-rest-actions { flex: 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.focus-rest-actions button { min-width: 66px; min-height: 44px; padding: 10px 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .focus-rest > .focus-rest-actions { flex: 1 0 100%; } .focus-rest-actions button { flex: 1; } }

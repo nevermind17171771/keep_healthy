@@ -25,7 +25,7 @@ import {state as fixture} from './ui-store-fixture';
 import {defaultRecording,degreesToPercent} from '../lib/recording-settings';
 test('focus view renders one exercise with a current set, previous reference and live rest controls',()=>{
  const state=structuredClone(fixture),session=state.draft!;const html=renderToString(<FocusWorkout state={state} session={session} restRemaining={75} onSkipRest={()=>{}} onExtendRest={()=>{}} onChange={()=>{}} onComplete={()=>{}} onSettings={()=>{}} onEquipment={()=>{}} onTargets={()=>{}} onAddSet={()=>{}} onRest={()=>{}} onNotes={()=>{}}/>);
- assert.match(html,/집중할 운동/);assert.match(html,/지난 기록/);assert.match(html,/오늘 목표/);assert.match(html,/01:15/);assert.match(html,/휴식 끝내기/);assert.equal((html.match(/class="focus-title"/g)||[]).length,1);assert.match(html,/1세트 완료/);
+ assert.match(html,/집중할 운동/);assert.match(html,/지난 기록/);assert.match(html,/오늘 목표/);assert.match(html,/01:15/);assert.match(html,/휴식 끝내기/);assert.match(html,/휴식 15초 줄이기/);assert.match(html,/휴식 15초 늘리기/);assert.equal((html.match(/class="focus-title"/g)||[]).length,1);assert.match(html,/1세트 완료/);
 });
 test('recording editor exposes unit selection, ordering, optional fields and defaults',()=>{
  const html=renderToString(<RecordingEditor name="인클라인 트레드밀 워크" cardio dumbbell={false} value={defaultRecording()} onSave={()=>{}}/>);assert.match(html,/경사율 \(%\)/);assert.match(html,/각도 \(°\)/);assert.match(html,/기구 레벨/);assert.match(html,/기본 속도/);assert.match(html,/칼로리 먼저 표시/);assert.match(html,/속도 위로/);

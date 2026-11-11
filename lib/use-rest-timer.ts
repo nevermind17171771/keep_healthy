@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BellPlayer } from './bell-player';
-import { REST_KEY, readRest, restSeconds, showRestNotification, type RestTimer } from './rest-timer';
+import { REST_KEY, adjustRestTimer, readRest, restSeconds, showRestNotification, type RestTimer } from './rest-timer';
 
 export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   const [timer,setTimer]=useState<RestTimer|null>(null),[now,setNow]=useState(Date.now());
@@ -51,8 +51,10 @@ export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   };
   const adjust=(seconds:number)=>{
     if(!current.current)return;
-    const p=getPlayer();p.stop();if(soundEnabled)p.prime();attempted.current=0;notified.current=0;
-    const time=Date.now();setNow(time);update({...current.current,end:Math.max(time,Math.max(time,current.current.end)+seconds*1000),soundPlayed:false,dismissed:false});
+    const time=Date.now(),next=adjustRestTimer(current.current,seconds,time);
+    if(next===current.current)return;
+    const p=getPlayer();p.stop();if(soundEnabled)p.prime();attempted.current=0;notified.current=0;setSoundStatus('');
+    setNow(time);update(next);
   };
   const testSound=async()=>{
     setSoundStatus('벨 재생 중');

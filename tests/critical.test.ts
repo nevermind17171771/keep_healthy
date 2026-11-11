@@ -293,3 +293,19 @@ test('defer keeps completed slots and every set intact while rotating pending ex
  assert.equal(deferExercise(s,completed),null);
 });
 import './service-worker.test';
+
+import {adjustRestTimer, restSeconds as remainingRest, readRest as restoreRest} from '../lib/rest-timer';
+test('six live minus taps shorten 2:30 to 1:00 and restore the same bell deadline',()=>{
+ const now=100000;let timer={sessionId:'rest-edit',end:now+150000,length:150};
+ for(let i=0;i<6;i++)timer=adjustRestTimer(timer,-15,now);
+ assert.equal(remainingRest(timer,now),60);assert.equal(timer.end,now+60000);assert.equal(timer.length,60);
+ assert.deepEqual(restoreRest(JSON.stringify(timer),'rest-edit'),timer);
+ assert.equal(remainingRest(timer,now+60000),0);
+});
+test('live rest adjustments respect elapsed time, clamp at zero, and rearm only on extension',()=>{
+ const original={sessionId:'x',end:160000,length:60,soundPlayed:true,dismissed:true};
+ const shortened=adjustRestTimer(original,-15,150000);assert.equal(shortened.end,150000);assert.equal(remainingRest(shortened,150000),0);assert.equal(shortened.soundPlayed,false);
+ assert.equal(adjustRestTimer(shortened,-15,151000),shortened);
+ const longer=adjustRestTimer(shortened,15,152000);assert.equal(longer.end,167000);assert.equal(remainingRest(longer,152000),15);assert.equal(longer.dismissed,false);
+ assert.equal(original.end,160000);
+});

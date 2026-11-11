@@ -7,6 +7,13 @@ export function readRest(raw: string | null, sessionId: string): RestTimer | nul
   } catch { return null; }
 }
 export function restSeconds(timer: RestTimer | null, now: number) { return timer ? Math.max(0, Math.ceil((timer.end - now) / 1000)) : 0; }
+/** Adjust this countdown only; persist the new deadline, never the exercise default. */
+export function adjustRestTimer(timer: RestTimer, seconds: number, now: number): RestTimer {
+  if (!Number.isFinite(seconds) || !Number.isFinite(now)) return timer;
+  const end = Math.min(now + 3600000, Math.max(now, Math.max(now, timer.end) + seconds * 1000));
+  if (end === timer.end || (timer.end <= now && seconds <= 0)) return timer;
+  return {...timer, end, length: Math.min(3600, Math.max(1, (timer.end <= now ? (end - now) / 1000 : timer.length + (end - timer.end) / 1000))), soundPlayed: false, dismissed: false};
+}
 export async function showRestNotification(test = false) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return false;
   const registration = await navigator.serviceWorker.getRegistration();
