@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Timer, Video, SlidersHorizontal, Plus } from 'lucide-react';
 import { NativeSelect } from '@/components/ui/native-select';
+import GrowthTarget from '@/components/growth-target';
 import StrengthSets from '@/components/strength-sets';
 import CardioSets from '@/components/cardio-sets';
 import { exercise, recordingFor, timeLabel, type AppState, type Session, type SetEntry, type SessionExercise } from '@/lib/model';
@@ -82,6 +83,7 @@ function FocusExercise(props: Props & {
           month: 'numeric',
           day: 'numeric'
         })}` : '이 기구의 첫 기록'}</span><button className="text-button" disabled={!previous.sets.length} onClick={() => props.onTargets(item)}>지난 세트를 오늘 목표로</button></div>
+ {!cardio && <GrowthTarget state={state} session={session} item={item} onChange={(id,patch)=>props.onChange(item.id,id,patch)}/>}
  {cardio ? <>{previous.sets[actualIndex] && <p className="set-reference">지난 구간 · {cardioSummary(item.name, previous.sets[actualIndex], recording)}</p>}<CardioSets name={item.name} sets={[set]} recording={recording} indexOffset={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} /></> : <StrengthSets name={item.name} type={ex?.type} sets={item.sets} previous={previous.sets} recording={recording} index={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} />}
  {!cardio && <div className="focus-rest-settings"><Timer size={17} /><NativeSelect aria-label={`${item.name} 휴식 시간`} value={item.rest} onChange={e => props.onRest(item, Number(e.target.value))}>{[30, 45, 60, 90, 120, 150, 180, 240, 300].map(n => <option key={n} value={n}>{timeLabel(n)} 휴식</option>)}</NativeSelect></div>}
  {(props.restActive || props.restRemaining > 0) && <div className="focus-rest" role="status"><div><span>{props.restRemaining ? '다음 세트까지' : '휴식 끝 · 준비됐어요'}</span><strong>{timeLabel(props.restRemaining)}</strong></div><div className="focus-rest-actions" role="group" aria-label="진행 중인 휴식 시간 조절"><button className="secondary" aria-label="휴식 15초 줄이기" disabled={!props.onAdjustRest || props.restRemaining<=0} onClick={()=>props.onAdjustRest?.(-15)}>−15초</button><button className="secondary" aria-label="휴식 15초 늘리기" disabled={!props.onAdjustRest} onClick={()=>props.onAdjustRest?.(15)}>+15초</button><button className="secondary" aria-label="휴식 30초 늘리기" onClick={props.onExtendRest}>+30초</button></div><button className="text-button" onClick={props.onSkipRest}>휴식 끝내기</button></div>}

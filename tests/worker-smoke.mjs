@@ -7,6 +7,8 @@ try{
  const anon=await mf.dispatchFetch('https://test.invalid/api/sync');assert.equal(anon.status,401);
  const loaded=await mf.dispatchFetch('https://test.invalid/api/sync',{headers:{'oai-authenticated-user-id':'synthetic-smoke-user'}});assert.equal(loaded.status,200);const snapshot=await loaded.json();assert.equal(snapshot.state.version,4);assert.equal(snapshot.revision,0);
  snapshot.state.sessions.push({id:'cardio-smoke',name:'기구별 기록 테스트',date:'2026-09-09T03:00:00Z',duration:1230,updatedAt:Date.now(),note:'',gymId:'main',condition:'',exercises:[{id:'smoke-row',exerciseId:'synthetic-incline',name:'인클라인 트레드밀 워크',equipmentId:'',note:'',rest:90,superset:'',sets:[{id:'smoke-set',weight:0,reps:0,duration:1230,distance:2.5,done:true,kind:'work',rpe:6,metrics:{incline:12.5,elevationGain:250,calories:188.5,speed:6.5,heartRate:138}}]}]});
+ snapshot.state.sessions[0].routineId=snapshot.state.routines[0].id;
+ snapshot.state.sessions[0].routineUpdatedAt=snapshot.state.routines[0].updatedAt;
  snapshot.state.profile.sessionView='focus';
  const settings={weightUnit:'lb',weightBasis:'pair',inclineUnit:'level',fieldOrder:['duration','inclineLevel','calories'],hiddenFields:['speed'],weightStep:1.133980925,defaults:{inclineLevel:7}};
  snapshot.state.profile.recordingPreferences={'main/synthetic-incline':settings};
@@ -19,6 +21,8 @@ try{
  const roundtrip=await(await mf.dispatchFetch('https://test.invalid/api/sync',{headers:{'oai-authenticated-user-id':'synthetic-smoke-user'}})).json();assert.deepEqual(roundtrip.state.sessions[0].exercises[0].sets[0].metrics,snapshot.state.sessions[0].exercises[0].sets[0].metrics);
  assert.deepEqual(roundtrip.state.profile.recordingPreferences,snapshot.state.profile.recordingPreferences);
  assert.equal(roundtrip.state.profile.sessionView,'focus');
+ assert.equal(roundtrip.state.sessions[0].routineId,snapshot.state.routines[0].id);
+ assert.equal(roundtrip.state.sessions[0].routineUpdatedAt,snapshot.state.routines[0].updatedAt);
  assert.deepEqual(roundtrip.state.sessions[0].exercises[0].recording,settings);
  assert.equal(roundtrip.state.sessions[0].exercises[0].repMax,12);
  assert.equal(roundtrip.state.sessions[0].exercises[0].effortCap,7);

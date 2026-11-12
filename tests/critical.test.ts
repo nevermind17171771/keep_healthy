@@ -309,3 +309,39 @@ test('live rest adjustments respect elapsed time, clamp at zero, and rearm only 
  const longer=adjustRestTimer(shortened,15,152000);assert.equal(longer.end,167000);assert.equal(remainingRest(longer,152000),15);assert.equal(longer.dismissed,false);
  assert.equal(original.end,160000);
 });
+
+import {routineUpdate,applyRoutineUpdate,growthSuggestion} from '../lib/adaptive-training';
+test('routine changes are explicit, preserve weights, exclude warmups and survive schema',()=>{
+ const state=defaultState(),r=state.routines[0];state.draft=startSession(state,r);
+ const d=state.draft,first=d.exercises[0],oldWeight=r.exercises[0].weight;
+ first.sets.push(makeSet({kind:'warmup'}),makeSet({weight:999}));first.rest=60;
+ assert.equal(routineUpdate(state,d)?.changed,true);assert.equal(r.exercises[0].rest===60,false);
+ const parsed=stateSchema.parse(state);assert.equal(parsed.draft?.routineId,r.id);
+ assert.equal(applyRoutineUpdate(state,d),true);assert.equal(r.exercises[0].weight,oldWeight);
+ assert.equal(r.exercises[0].sets,first.sets.filter(s=>s.kind==='work').length);assert.equal(r.exercises[0].rest,60);
+});
+test('routine reflection refuses deleted or concurrently changed source and legacy drafts',()=>{
+ const s=defaultState(),r=s.routines[0],d=startSession(s,r);d.exercises.reverse();r.updatedAt++;
+ assert.equal(applyRoutineUpdate(s,d),false);delete d.routineId;assert.equal(routineUpdate(s,d),null);
+});
+function growthFixture(){
+ const s=defaultState(),r=s.routines[0];
+ s.sessions=[1,2].map(n=>{const d=startSession(s,r);d.id='past'+n;d.date=`2026-11-0${n}T00:00:00Z`;delete d.startedAt;d.exercises.forEach(e=>e.sets.forEach(x=>{x.weight=40;x.reps=e.repMax||12;x.done=true;x.rpe=0;}));return d;});
+ s.draft=startSession(s,r);return s;
+}
+test('two successful sessions offer optional progression without changing previous input',()=>{
+ const s=growthFixture(),d=s.draft!,e=d.exercises[0],before=JSON.stringify(e);
+ const p=growthSuggestion(s,d,e);assert.equal(p.targets[0].weight,42.5);assert.equal(p.targets[0].reps,e.repMin);assert.equal(JSON.stringify(e),before);
+ s.sessions[0].exercises[0].sets[0].reps=1;assert.equal(growthSuggestion(s,d,e).targets.length,0);
+});
+test('growth excludes incomplete, changed machines, gyms and incompatible recording conditions',()=>{
+ for(const change of [(s:AppState)=>{s.sessions[0].exercises[0].sets[0].done=false;},(s:AppState)=>{s.sessions[0].gymId='other';},(s:AppState)=>{s.sessions[0].exercises[0].equipmentId='other';},(s:AppState)=>{s.sessions[0].exercises[0].recording!.weightBasis='pair';}]){
+ const s=growthFixture();change(s);assert.equal(growthSuggestion(s,s.draft!,s.draft!.exercises[0]).targets.length,0);
+ }
+});
+test('repetition progression is bounded and completed warmup/drop rows never affect it',()=>{
+ const s=growthFixture(),d=s.draft!,e=d.exercises[0];s.sessions.forEach(x=>{x.exercises[0].sets.forEach(y=>y.reps=e.repMin!);x.exercises[0].sets.push(makeSet({kind:'warmup',done:true,reps:1,weight:10}));});
+ assert.equal(growthSuggestion(s,d,e).targets[0].reps,e.repMin!+1);
+});
+test('unchanged routine and warmups alone do not prompt reflection',()=>{const s=defaultState(),d=startSession(s,s.routines[0]);assert.equal(routineUpdate(s,d)?.changed,false);d.exercises[0].sets.push(makeSet({kind:'warmup'}));assert.equal(routineUpdate(s,d)?.changed,false);});
+test('normal condition allows progression while fatigue and missing loads hold',()=>{const s=growthFixture(),d=s.draft!,e=d.exercises[0];s.sessions.forEach(x=>x.condition='보통');assert.ok(growthSuggestion(s,d,e).targets.length);d.condition='피곤함';assert.equal(growthSuggestion(s,d,e).targets.length,0);d.condition='';s.sessions[0].exercises[0].sets[0].weight=0;assert.equal(growthSuggestion(s,d,e).targets.length,0);});

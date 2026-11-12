@@ -50,6 +50,8 @@ const exSchema = z.object({
   sets: z.array(setSchema).max(100)
 });
 const sessionSchema = z.object({
+  routineId: z.string().optional(),
+  routineUpdatedAt: timestamp.optional(),
   id: z.string(),
   name: z.string().max(200),
   date: z.string().refine(v => !isNaN(Date.parse(v))),
@@ -427,6 +429,8 @@ export function startSession(state: AppState, routine?: Routine): Session {
   return {
     id: uid(),
     name: routine?.name || '자유 운동',
+    routineId: routine?.id,
+    routineUpdatedAt: routine?.updatedAt,
     date: new Date(now).toISOString(),
     duration: 0,
     startedAt: now,

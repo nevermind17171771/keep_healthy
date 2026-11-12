@@ -2587,3 +2587,9 @@ details summary {
 .focus-rest > .focus-rest-actions { flex: 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .focus-rest-actions button { min-width: 66px; min-height: 44px; padding: 10px 12px; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .focus-rest > .focus-rest-actions { flex: 1 0 100%; } .focus-rest-actions button { flex: 1; } }
+.growth-target,.routine-change { margin:16px 0; padding:16px; border:1px solid var(--border); border-radius:14px; background:rgba(240,102,82,.045); }
+.growth-target p,.routine-change p { font-size:13px; line-height:1.65; margin:8px 0; }
+.growth-target small { display:block; margin-top:10px; line-height:1.6; opacity:.7; }
+.routine-change-grid {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.routine-change ol {padding-left:20px;font-size:13px;line-height:1.8;}
+@media(max-width:600px){.routine-change-grid{grid-template-columns:1fr}.routine-change .row{flex-wrap:wrap}.growth-target button{width:100%}}

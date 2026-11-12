@@ -1,5 +1,7 @@
 'use client';
 import { deferExercise } from '@/lib/session-actions';
+import {routineUpdate,applyRoutineUpdate} from '@/lib/adaptive-training';
+import GrowthTarget from '@/components/growth-target';
 import ProgramLibrary, {RoutineReview} from '@/components/program-library';
 import {importProgram} from '@/lib/programs';
 import {alternatives} from '@/lib/program-data';
@@ -24,7 +26,7 @@ import { defaultRecording, weightText, displayedWeight, type RecordingSettings }
 import { previousWorkSets, loadPreviousTargets, chooseEquipment } from '@/lib/session-actions';
 import { cardioSummary, nextCardioInterval, CARDIO_CSV_FIELDS } from '@/lib/cardio';
 import { shortsSearchUrl } from '@/lib/exercise-video';
-import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, recommendation, startSession, previousSetInputs, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
+import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, startSession, previousSetInputs, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
 import { useWorkout } from '@/lib/use-workout';
 import { download } from '@/lib/cache';
 const number = (v: number) => new Intl.NumberFormat('ko-KR', {
@@ -89,6 +91,7 @@ export default function WorkoutApp({
     [selected, setSelected] = useState(EXERCISES.find(e => e.name === '머신 체스트 프레스')!.id),
     [pickerFor, setPickerFor] = useState('session'),
     [swapId, setSwapId] = useState('');
+  const [reflectRoutine,setReflectRoutine] = useState(false);
   const [editRoutine, setEditRoutine] = useState<Routine | null>(null),
     [detailSession, setDetailSession] = useState<Session | null>(null),
     [importState, setImportState] = useState<AppState | null>(null),
@@ -299,11 +302,14 @@ export default function WorkoutApp({
       [key]: v
     });
   });
+  const routineChange=draft?routineUpdate(state,draft):null;
   function finish() {
     if (!draft || !completedSets(draft)) {
       toast.error('완료한 본세트를 1개 이상 기록해 주세요.');
       return;
     }
+    if(reflectRoutine && routineChange && !routineChange.changed)setReflectRoutine(false);
+    if(reflectRoutine && (!routineChange || routineChange.conflict)){toast.error('기본 루틴이 변경됐어요. 오늘 기록만 저장하거나 루틴을 다시 확인해 주세요.');return;}
     const saved = structuredClone(draft);
     for(const item of saved.exercises)item.recording ||= recordingFor(state,item,saved.gymId);
     saved.name = saved.name.trim() || '나의 운동';
@@ -315,9 +321,11 @@ export default function WorkoutApp({
     const okay = change(s => {
       const i = s.sessions.findIndex(x => x.id === saved.id);
       if (i >= 0) s.sessions[i] = saved;else s.sessions.push(saved);
+      if(reflectRoutine)applyRoutineUpdate(s,saved);
       s.draft = null;
     });
     if (!okay) return;
+    setReflectRoutine(false);
     cancelRest();
     setModal('');
     setPage('home');
@@ -489,14 +497,14 @@ export default function WorkoutApp({
                   setGroup(m);
                   setQuery('');
                   setPage('library');
-                }} /><div className="target-labels">{plannedMuscles.slice(0, 5).map(m => <span key={m}>{MUSCLES[m]}</span>)}</div><p className="micro">부위를 누르면 해당 운동을 볼 수 있어요.</p></section><section className="insight-panel"><span className="insight-icon"><Sparkles size={20} /></span><div><h3>다음 세트의 기준</h3><p>{sessions.length ? '지난 기록과 RPE를 바탕으로 다음 중량을 제안해요. 운동 화면에서 확인하세요.' : '처음엔 익숙한 중량으로 시작하세요. 기록이 쌓이면 다음 운동의 기준이 생겨요.'}</p></div></section></div></div></>}
+                }} /><div className="target-labels">{plannedMuscles.slice(0, 5).map(m => <span key={m}>{MUSCLES[m]}</span>)}</div><p className="micro">부위를 누르면 해당 운동을 볼 수 있어요.</p></section><section className="insight-panel"><span className="insight-icon"><Sparkles size={20} /></span><div><h3>다음 세트의 기준</h3><p>{sessions.length ? '같은 기구의 최근 2회 기록을 비교해 다음 중량·횟수 목표를 제안해요. 운동 화면에서 확인하세요.' : '처음엔 익숙한 중량으로 시작하세요. 기록이 쌓이면 다음 운동의 기준이 생겨요.'}</p></div></section></div></div></>}
  {page === 'session' && draft && <><div className="page-heading"><div><p className="eyebrow">WORKOUT IN PROGRESS</p><h1>{draft.name}</h1><div className="session-meta"><Timer size={16} /><b>{timeLabel(elapsed(draft, now))}</b><span>· {completedSets(draft)}세트 완료</span><button className="icon-button" aria-label={draft.pausedAt ? '운동 재개' : '운동 일시정지'} onClick={() => changeDraft(s => {
                   if (!s.startedAt) return;
                   if (s.pausedAt) {
                     s.pausedMs = (s.pausedMs || 0) + Date.now() - s.pausedAt;
                     delete s.pausedAt;
                   } else s.pausedAt = Date.now();
-                })}>{draft.pausedAt ? <Play size={18} /> : <Pause size={18} />}</button></div></div><button className="primary" onClick={() => setModal('finish')}><CheckCheck size={18} />운동 완료</button></div>
+                })}>{draft.pausedAt ? <Play size={18} /> : <Pause size={18} />}</button></div></div><button className="primary" onClick={() => {setReflectRoutine(false);setModal('finish');}}><CheckCheck size={18} />운동 완료</button></div>
  <div className="workout-toolbar"><button className="secondary" onClick={() => openPicker()}><Plus size={17} />운동 추가</button><button className="secondary" onClick={() => setModal('quick')}><Sparkles size={17} />빠른 입력</button><button className="text-button danger" onClick={() => setConfirm({
               title: '진행 중인 운동을 취소할까요?',
               detail: '지금 입력한 운동은 백업 파일로 남긴 뒤 취소해요.',
@@ -514,7 +522,6 @@ export default function WorkoutApp({
  {(state.profile.sessionView||'focus')==='focus'?<FocusWorkout state={state} session={draft} restRemaining={restRemaining} restActive={!!restEnd} onSkipRest={()=>cancelRest()} onExtendRest={()=>adjustRest(30)} onAdjustRest={adjustRest} onChange={patchSet} onComplete={toggleSet} onSettings={openRecording} onSwap={item=>openPicker('session',item.id)} onEquipment={selectEquipment} onTargets={loadTargets} onAddSet={addSet} onDeleteSet={deleteFocusSet} onDefer={deferFocus} onRest={(item,seconds)=>changeDraft(s=>{s.exercises.find(e=>e.id===item.id)!.rest=seconds;})} onNotes={item=>{setNotesId(item.id);setModal('notes');}}/>:<>
  <div className="session-layout"><div className="session-exercises">{draft.exercises.map((e, ei) => {
                 const ex = exercise(e.exerciseId),
-                  rec = recommendation(state, e.exerciseId, e.equipmentId,e.repMin||8,e.repMax||12,e.effortCap||8),
                   last = previousWorkSets(state,e).sets,
                   recording=recordingFor(state,e),
                   timed = ex?.type === 'time' || ex?.type === 'cardio',
@@ -540,18 +547,10 @@ export default function WorkoutApp({
                       }));
                     })}>+ 워밍업</button>}</div>
  {eq?.setup && <div className="equipment-note"><SlidersHorizontal size={14} />{eq.setup}</div>}{e.note && <p className="exercise-note">{e.note}</p>}
- {!timed && <div className="recommendation"><Sparkles size={14} /><span><b>{rec.action}</b> {rec.weight > 0 ? `${weightText(rec.weight,recording)} · ${rec.reps}회` : rec.reason}</span><button aria-label="추천 이유" className="icon-button" onClick={() => toast(rec.reason)}><Info size={14} /></button>{rec.weight > 0 && <button onClick={() => changeDraft(s => {
-                      s.exercises[ei].sets.forEach(x => {
-                        if (!x.done && x.kind === 'work') {
-                          x.weight = rec.weight;
-                          x.reps = rec.reps;
-                        }
-                      });
-                    })}>적용</button>}</div>}
  {ex?.type === 'cardio' ? <CardioSets name={e.name} sets={e.sets} recording={recording} onChange={(id, patch) => changeDraft(s => {
                     const set = s.exercises.find(x => x.id === e.id)!.sets.find(x => x.id === id)!;
                     Object.assign(set, patch);
-                  })} onComplete={id => toggleSet(e.id, id)} /> : <StrengthSets name={e.name} type={ex?.type} sets={e.sets} previous={last} recording={recording} onChange={(id,p)=>patchSet(e.id,id,p)} onComplete={id=>toggleSet(e.id,id)}/>}
+                  })} onComplete={id => toggleSet(e.id, id)} /> : <><GrowthTarget state={state} session={draft} item={e} onChange={(id,patch)=>patchSet(e.id,id,patch)}/><StrengthSets name={e.name} type={ex?.type} sets={e.sets} previous={last} recording={recording} onChange={(id,p)=>patchSet(e.id,id,p)} onComplete={id=>toggleSet(e.id,id)}/></>}
  {last.length > 0 && <button className="text-button target-load" onClick={()=>loadTargets(e)}>지난 세트를 오늘 목표로</button>}
  {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => ex?.type === 'cardio' ? cardioSummary(e.name, s,recording) : ex?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,recording)} × ${s.reps}회`).join(' / ')}</p></details>}
  <div className="set-footer"><button onClick={() => changeDraft(s => {
@@ -872,7 +871,7 @@ export default function WorkoutApp({
               s.duration = Number(e.target.value) * 60;
             })} /></Field>}<div className="finish-stats"><div><b>{completedSets(draft)}</b><span>완료 본세트</span></div><div><b>{Math.round(elapsed(draft, now) / 60)}</b><span>운동 시간 (분)</span></div><div><b>{number(volume(draft))}</b><span>중량 볼륨 (kg)</span></div></div><Field label="오늘의 한 줄"><textarea maxLength={4000} placeholder="오늘 잘한 점이나 다음에 신경 쓸 점" value={draft.note} onChange={e => changeDraft(s => {
               s.note = e.target.value;
-            })} /></Field><p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
+            })} /></Field>{routineChange?.changed && <section className="routine-change"><h3>오늘 바꾼 구성을 다음에도 쓸까요?</h3><p>{routineChange.routine.name} · 종목·순서·본세트 수·휴식 설정을 반영해요. 중량 입력은 다음에도 이전 기록이 우선이에요.</p><div className="routine-change-grid"><div><strong>기존 루틴</strong><ol>{routineChange.routine.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div><div><strong>반영할 구성</strong><ol>{routineChange.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div></div><p className="micro">완료 여부와 관계없이 오늘 구성한 본세트 수를 반영해요. 워밍업·드롭 세트는 제외해요.</p>{routineChange.conflict?<div><button className="secondary" onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><p role="status">시작 이후 기본 루틴이 변경돼 덮어쓰지 않아요. 오늘 기록만 저장해 주세요.</p></div>:<div className="row"><button className={reflectRoutine?'secondary':'primary'} aria-pressed={!reflectRoutine} onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><button className={reflectRoutine?'primary':'secondary'} aria-pressed={reflectRoutine} onClick={()=>setReflectRoutine(true)}>기본 루틴에도 반영</button></div>}</section>}<p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
  {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? cardioSummary(e.name, s,historicalRecording(e)) : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,historicalRecording(e))} × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
               title: '운동 기록을 삭제할까요?',
               detail: '설정 → 삭제한 운동에서 복원할 수 있어요.',
