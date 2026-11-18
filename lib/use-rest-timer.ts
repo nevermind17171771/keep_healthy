@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BellPlayer } from './bell-player';
-import { REST_KEY, adjustRestTimer, readRest, restSeconds, showRestNotification, type RestTimer } from './rest-timer';
+import { REST_KEY, adjustRestTimer, readRest, restSeconds, restAlertMode, showRestNotification, type RestTimer } from './rest-timer';
 
 export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   const [timer,setTimer]=useState<RestTimer|null>(null),[now,setNow]=useState(Date.now());
@@ -9,7 +9,7 @@ export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   const [soundEnabled,setSoundEnabled]=useState(true),[bellVolume,setBellVolume]=useState(.5);
   useEffect(()=>{try{const v=JSON.parse(localStorage.getItem('keep-healthy-bell')||'null');if(v){setSoundEnabled(v.enabled!==false);if(Number.isFinite(v.volume))setBellVolume(Math.max(0,Math.min(1,v.volume)));}}catch{}},[]);
   const setSound=(enabled:boolean,volume:number)=>{setSoundEnabled(enabled);setBellVolume(volume);player.current?.stop();try{localStorage.setItem('keep-healthy-bell',JSON.stringify({enabled,volume}));}catch{}};
-  const current=useRef<RestTimer|null>(null),player=useRef<BellPlayer|null>(null),attempted=useRef(0),notified=useRef(0);
+  const current=useRef<RestTimer|null>(null),player=useRef<BellPlayer|null>(null),attempted=useRef(0),notified=useRef(0),notificationPending=useRef(0);
   const getPlayer=useCallback(()=>player.current ||= new BellPlayer(),[]);
   const update=useCallback((next:RestTimer|null)=>{
     current.current=next;setTimer(next);
@@ -22,20 +22,32 @@ export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   },[sessionId,ready,update]);
   useEffect(()=>{
     const tick=()=>setNow(Date.now());
-    const visibility=()=>{if(document.visibilityState!=='visible'){player.current?.stop();}else if(current.current&&current.current.end<=Date.now()){update({...current.current,soundPlayed:true});}tick();};
+    const visibility=()=>{if(document.visibilityState!=='visible')player.current?.stop();tick();};
     const id=setInterval(tick,250);
     window.addEventListener('pageshow',visibility);document.addEventListener('visibilitychange',visibility);
     return()=>{clearInterval(id);window.removeEventListener('pageshow',visibility);document.removeEventListener('visibilitychange',visibility);player.current?.dispose();player.current=null;};
   },[]);
+  const deadline=timer?.end;
+  useEffect(()=>{
+    if(!deadline)return;
+    const delay=deadline-Date.now();
+    if(delay<=0)return;
+    const timeout=setTimeout(()=>setNow(Date.now()),delay);
+    return()=>clearTimeout(timeout);
+  },[deadline]);
   const finished=!!timer&&restSeconds(timer,now)===0;
   // Visual completion never depends on audio success or notification permission.
   useEffect(()=>{
     if(!finished||!timer||timer.dismissed)return;
-    if(notified.current!==timer.end){
-      notified.current=timer.end;
-      if(document.visibilityState!=='visible')void showRestNotification().catch(()=>{});
+    const mode=restAlertMode(timer,now,document.visibilityState==='visible',soundEnabled);
+    if(mode==='notification'&&notified.current!==timer.end&&'Notification' in window&&Notification.permission==='granted'){
+      notified.current=timer.end;notificationPending.current=timer.end;
+      void showRestNotification(timer.test).then(ok=>{
+        if(current.current?.end!==timer.end)return;
+        if(ok)update({...current.current,soundPlayed:true});
+      }).catch(()=>{}).finally(()=>{if(notificationPending.current===timer.end)notificationPending.current=0;});
     }
-    if(soundEnabled&&now-timer.end<2000&&!timer.soundPlayed&&attempted.current!==timer.end&&document.visibilityState==='visible'){
+    if(mode==='bell'&&notificationPending.current!==timer.end&&attempted.current!==timer.end){
       attempted.current=timer.end;setSoundStatus('벨 재생 중');
       void getPlayer().play(bellVolume).then(ok=>{
         if(current.current?.end!==timer.end)return;
@@ -72,5 +84,5 @@ export function useRestTimer(sessionId: string | undefined, ready: boolean) {
   };
   const cancel=()=>{getPlayer().stop();update(null);setSoundStatus('');};
   const dismiss=()=>{getPlayer().stop();if(current.current)update({...current.current,dismissed:true});};
-  return {soundEnabled,bellVolume,setSound,restEnd:timer?.end||0,restLength:timer?.length||90,restRemaining:restSeconds(timer,now),finished:finished&&!timer?.dismissed,soundStatus,notificationStatus,start:(seconds:number)=>begin(seconds),adjust,cancel,dismiss,testSound,testNotification,testCountdown:()=>begin(5,true)};
+  return {soundEnabled,bellVolume,setSound,restEnd:timer?.dismissed?0:timer?.end||0,restLength:timer?.length||90,restRemaining:restSeconds(timer,now),finished:finished&&!timer?.dismissed,soundStatus,notificationStatus,start:(seconds:number)=>begin(seconds),adjust,cancel,dismiss,testSound,testNotification,testCountdown:()=>begin(5,true)};
 }

@@ -389,3 +389,15 @@ test('the original XAPK imports every selected PNG without including code', {ski
   assert.equal(images.get('002512.png')?.type,'image/png');
   assert.equal(images.has('classes.dex'),false);
 });
+
+import {restAlertMode} from '../lib/rest-timer';
+test('rest deadline rings after brief resume, allows a background alert, and suppresses stale or dismissed alerts',()=>{
+  const timer={sessionId:'focus',end:60000,length:60};
+  assert.equal(restAlertMode(timer,59999,true,true),null);
+  assert.equal(restAlertMode(timer,60000,true,true),'bell');
+  assert.equal(restAlertMode(timer,62000,false,true),'notification');
+  assert.equal(restAlertMode(timer,64000,true,true),'bell');
+  assert.equal(restAlertMode(timer,65000,true,true),null);
+  assert.equal(restAlertMode({...timer,dismissed:true},60000,true,true),null);
+  assert.equal(restAlertMode({...timer,soundPlayed:true},60000,false,true),null);
+});

@@ -14,6 +14,12 @@ export function adjustRestTimer(timer: RestTimer, seconds: number, now: number):
   if (end === timer.end || (timer.end <= now && seconds <= 0)) return timer;
   return {...timer, end, length: Math.min(3600, Math.max(1, (timer.end <= now ? (end - now) / 1000 : timer.length + (end - timer.end) / 1000))), soundPlayed: false, dismissed: false};
 }
+/** Ring promptly after a short interruption, never replay an old alert after resuming. */
+export function restAlertMode(timer: RestTimer, now: number, visible: boolean, soundEnabled: boolean) {
+  const overdue = now - timer.end;
+  if (timer.dismissed || timer.soundPlayed || overdue < 0 || overdue >= 5000) return null;
+  return !visible ? 'notification' : soundEnabled ? 'bell' : null;
+}
 export async function showRestNotification(test = false) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return false;
   const registration = await navigator.serviceWorker.getRegistration();

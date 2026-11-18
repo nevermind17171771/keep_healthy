@@ -2635,3 +2635,12 @@ details summary {
 .trend-current{color:var(--soft);font-size:12px;margin:9px 0}
 .trend-current strong{font-size:20px;color:var(--foreground)}
 @media(max-width:480px){.exercise-pose-small{width:68px;height:47px}.attempt-row{grid-template-columns:1fr;gap:3px}.pose-focus-heading .focus-title h2{font-size:22px}}
+.focus-more{border-top:1px solid var(--border);font-size:13px}
+.focus-more>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;color:var(--muted-foreground)}
+.focus-more[open]{padding-bottom:9px}
+.focus-exercise .focus-title p{margin-bottom:8px}
+.focus-exercise .focus-set-nav{margin:12px 0 2px}
+.focus-exercise .focus-navigation{margin:12px 0}
+.focus-exercise .focus-rest{padding:10px 12px;margin:10px 0}
+.focus-exercise .focus-rest strong{font-size:28px}
+.focus-exercise .focus-complete{margin-top:10px}
