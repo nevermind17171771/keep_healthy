@@ -1,5 +1,7 @@
 'use client';
 
+import ExercisePose from '@/components/exercise-pose';
+import { RecentAttempts } from '@/components/workout-insights';
 import { useEffect, useState } from 'react';
 import { Timer, Video, SlidersHorizontal, Plus } from 'lucide-react';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -71,7 +73,7 @@ function FocusExercise(props: Props & {
       if (next >= 0) selectSet(next);
     }
   };
-  return <section className="panel focus-exercise"><div className="focus-title"><span className="eyebrow">{cardio ? 'CARDIO' : 'NEXT SET'}</span><h2>{item.name}</h2><p>{ex?.primaryLabels.join(' · ') || '내 운동'}</p></div>{item.repMin&&<p className="micro">목표 {item.repMin}–{item.repMax||item.repMin}회 · RPE {item.effortCap||8} 이하를 출발점으로 조절하세요.</p>}<div className="focus-tools"><NativeSelect aria-label={`${item.name} 기구`} value={item.equipmentId} onChange={e => props.onEquipment(item, e.target.value)}><option value="">기본 기록</option>{equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect><button className="secondary" onClick={() => props.onSettings(item)}><SlidersHorizontal size={17} />입력 설정</button><button className="text-button" onClick={() => props.onNotes(item)}>메모</button>{props.onSwap&&<button className="text-button" onClick={()=>props.onSwap!(item)}>대체 운동</button>}<a className="text-button video-link" href={shortsSearchUrl(item.name)} target="_blank" rel="noopener noreferrer" aria-label={`${item.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={17} />쇼츠 검색</a></div>
+  return <section className="panel focus-exercise"><div className="pose-focus-heading"><div className="focus-title"><span className="eyebrow">{cardio ? 'CARDIO' : 'NEXT SET'}</span><h2>{item.name}</h2><p>{ex?.primaryLabels.join(' · ') || '내 운동'}</p></div><ExercisePose name={ex?.name || item.name}/></div>{item.repMin&&<p className="micro">목표 {item.repMin}–{item.repMax||item.repMin}회 · RPE {item.effortCap||8} 이하를 출발점으로 조절하세요.</p>}<div className="focus-tools"><NativeSelect aria-label={`${item.name} 기구`} value={item.equipmentId} onChange={e => props.onEquipment(item, e.target.value)}><option value="">기본 기록</option>{equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</NativeSelect><button className="secondary" onClick={() => props.onSettings(item)}><SlidersHorizontal size={17} />입력 설정</button><button className="text-button" onClick={() => props.onNotes(item)}>메모</button>{props.onSwap&&<button className="text-button" onClick={()=>props.onSwap!(item)}>대체 운동</button>}<a className="text-button video-link" href={shortsSearchUrl(item.name)} target="_blank" rel="noopener noreferrer" aria-label={`${item.name} 유튜브 쇼츠 검색 (새 탭)`}><Video size={17} />쇼츠 검색</a></div>
  {(eq?.setup || item.note) && <p className="focus-note">{[eq?.setup, item.note].filter(Boolean).join(' · ')}</p>}
  <div className="focus-set-nav" aria-label="세트 선택">{item.sets.map((s, i) => <button key={s.id} className={(i === actualIndex ? 'selected ' : '') + (s.done ? 'completed' : '')} aria-pressed={i === actualIndex} onClick={() => selectSet(i)}>{s.kind === 'warmup' ? 'W' : s.kind === 'drop' ? 'D' : i + 1}{s.done ? ' ✓' : ''}</button>)}<button aria-label={cardio ? '구간 추가' : '세트 추가'} onClick={() => {
         props.onAddSet(item);
@@ -83,6 +85,7 @@ function FocusExercise(props: Props & {
           month: 'numeric',
           day: 'numeric'
         })}` : '이 기구의 첫 기록'}</span><button className="text-button" disabled={!previous.sets.length} onClick={() => props.onTargets(item)}>지난 세트를 오늘 목표로</button></div>
+ <RecentAttempts state={state} session={session} item={item}/>
  {!cardio && <GrowthTarget state={state} session={session} item={item} onChange={(id,patch)=>props.onChange(item.id,id,patch)}/>}
  {cardio ? <>{previous.sets[actualIndex] && <p className="set-reference">지난 구간 · {cardioSummary(item.name, previous.sets[actualIndex], recording)}</p>}<CardioSets name={item.name} sets={[set]} recording={recording} indexOffset={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} /></> : <StrengthSets name={item.name} type={ex?.type} sets={item.sets} previous={previous.sets} recording={recording} index={actualIndex} onChange={(id, p) => props.onChange(item.id, id, p)} onComplete={complete} />}
  {!cardio && <div className="focus-rest-settings"><Timer size={17} /><NativeSelect aria-label={`${item.name} 휴식 시간`} value={item.rest} onChange={e => props.onRest(item, Number(e.target.value))}>{[30, 45, 60, 90, 120, 150, 180, 240, 300].map(n => <option key={n} value={n}>{timeLabel(n)} 휴식</option>)}</NativeSelect></div>}

@@ -2593,3 +2593,45 @@ details summary {
 .routine-change-grid {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .routine-change ol {padding-left:20px;font-size:13px;line-height:1.8;}
 @media(max-width:600px){.routine-change-grid{grid-template-columns:1fr}.routine-change .row{flex-wrap:wrap}.growth-target button{width:100%}}
+
+/* Exercise images and workout comparisons */
+.exercise-pose{display:block;flex:none;max-width:100%;object-fit:contain;border-radius:10px;background:#111}
+.exercise-pose-small{width:84px;height:55px}
+.exercise-pose-large{width:min(100%,360px);height:auto;aspect-ratio:16/9}
+.exercise-icon:has(.exercise-pose){width:auto;height:auto;background:none}
+.exercise-icon:has(.exercise-pose)>svg{display:none}
+.pose-heading{display:flex;align-items:center;gap:12px;min-width:0}
+.pose-focus-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pose-focus-heading:has(img) .focus-title{min-width:0}
+.pose-focus-heading .exercise-pose{width:clamp(100px,29vw,176px);height:auto;aspect-ratio:16/9}
+.routine-exercises>div{align-items:center}
+.routine-exercises .exercise-pose{width:58px;height:38px}
+.routine-exercises>div>span{flex:1}
+.personal-pose{display:grid;gap:9px;margin:12px 0;justify-items:start}
+.pose-file{display:inline-flex;width:fit-content;align-items:center;gap:6px;cursor:pointer}
+.panel:has(input:focus-visible)>.pose-file,.personal-pose:has(input:focus-visible)>.pose-file{outline:2px solid var(--coral);outline-offset:3px}
+.pose-file[aria-disabled=true]{opacity:.55;cursor:wait}
+.recent-attempts{border:1px solid var(--border);border-radius:12px;padding:9px 12px;margin:10px 0;font-size:13px}
+.recent-attempts summary{display:flex;align-items:center;justify-content:space-between;min-height:32px;cursor:pointer;font-weight:600}
+.recent-attempts[open] summary svg{transform:rotate(180deg)}
+.attempt-row{display:grid;grid-template-columns:auto 1fr;gap:9px;align-items:baseline;margin:8px 0}
+.attempt-row time{font-variant-numeric:tabular-nums;color:var(--soft);font-size:11px}
+.set-chips,.best-stats{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.set-chips>span{background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12px;font-variant-numeric:tabular-nums}
+.set-chips>.aux-set{color:var(--soft)}
+.pose-history-row{padding:13px 0;display:grid;gap:8px;border-bottom:1px solid var(--border)}
+.pose-history-row h3,.pose-history-row p{margin:0}
+.pose-history-row details{font-size:12px;color:var(--soft)}
+.best-stats{color:var(--coral);font-size:11px}
+.log-calendar{max-width:620px;margin-bottom:16px}
+.log-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;align-items:center;text-align:center}
+.log-calendar-grid>span{font-size:11px;color:var(--soft)}
+.log-calendar-grid button{display:grid;place-content:center;position:relative;min-height:39px;border-radius:9px;font-variant-numeric:tabular-nums}
+.log-calendar-grid button.has-log{background:var(--muted);font-weight:700}
+.log-calendar-grid button[aria-pressed=true]{outline:1px solid var(--coral)}
+.log-calendar-grid button[aria-current=date]{color:var(--coral)}
+.log-calendar-grid i{height:4px;width:4px;border-radius:100%;position:absolute;bottom:4px;left:calc(50% - 2px);background:var(--coral)}
+.trend-options>select,.trend-options>.form-grid{margin-bottom:9px}
+.trend-current{color:var(--soft);font-size:12px;margin:9px 0}
+.trend-current strong{font-size:20px;color:var(--foreground)}
+@media(max-width:480px){.exercise-pose-small{width:68px;height:47px}.attempt-row{grid-template-columns:1fr;gap:3px}.pose-focus-heading .focus-title h2{font-size:22px}}

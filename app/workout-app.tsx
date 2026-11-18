@@ -1,4 +1,8 @@
 'use client';
+import ExercisePose, {PersonalPose, PoseImport} from '@/components/exercise-pose';
+import {RecentAttempts, WorkoutHistoryRows} from '@/components/workout-insights';
+import HistoryCalendar from '@/components/history-calendar';
+import ExerciseTrends from '@/components/exercise-trends';
 import { deferExercise } from '@/lib/session-actions';
 import {routineUpdate,applyRoutineUpdate} from '@/lib/adaptive-training';
 import GrowthTarget from '@/components/growth-target';
@@ -26,7 +30,7 @@ import { defaultRecording, weightText, displayedWeight, type RecordingSettings }
 import { previousWorkSets, loadPreviousTargets, chooseEquipment } from '@/lib/session-actions';
 import { cardioSummary, nextCardioInterval, CARDIO_CSV_FIELDS } from '@/lib/cardio';
 import { shortsSearchUrl } from '@/lib/exercise-video';
-import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, oneRM, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, startSession, previousSetInputs, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
+import { EXERCISES, GROUPS, MUSCLES, uid, day, timeLabel, parseTime, volume, completedSets, elapsed, exercise, latestSets, recordingFor, historicalRecording, preferredEquipment, startSession, previousSetInputs, makeSet, migrate, mergeStates, liveSessions, type AppState, type Session, type Routine, type SetEntry, type SessionExercise } from '@/lib/model';
 import { useWorkout } from '@/lib/use-workout';
 import { download } from '@/lib/cache';
 const number = (v: number) => new Intl.NumberFormat('ko-KR', {
@@ -40,6 +44,7 @@ const dateText = (v: string) => new Date(v).toLocaleDateString('ko-KR', {
 });
 const days = ['월', '화', '수', '목', '금', '토', '일'];
 const weekKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const exerciseNames = EXERCISES.map(e => e.name);
 const pill = (text: string) => <span className="pill">{text}</span>;
 function Field({
   label,
@@ -91,6 +96,7 @@ export default function WorkoutApp({
     [selected, setSelected] = useState(EXERCISES.find(e => e.name === '머신 체스트 프레스')!.id),
     [pickerFor, setPickerFor] = useState('session'),
     [swapId, setSwapId] = useState('');
+  const [catalogLimit, setCatalogLimit] = useState(80);
   const [reflectRoutine,setReflectRoutine] = useState(false);
   const [editRoutine, setEditRoutine] = useState<Routine | null>(null),
     [detailSession, setDetailSession] = useState<Session | null>(null),
@@ -102,8 +108,6 @@ export default function WorkoutApp({
     } | null>(null),
     [now, setNow] = useState(Date.now()),
     [recordFilter, setRecordFilter] = useState(''),
-    [statsEx, setStatsEx] = useState(''),
-    [statsEquipment, setStatsEquipment] = useState(''),
     [cardSession, setCardSession] = useState<Session | null>(null),
     [shareSession, setShareSession] = useState<Session | null>(null),
     [backups, setBackups] = useState<{
@@ -373,6 +377,26 @@ export default function WorkoutApp({
     setModal('');
     toast.success('루틴을 저장했어요.');
   }
+  function repeatSession(previous: Session) {
+    if (draft) { toast('먼저 진행 중인 운동을 마무리해 주세요.'); return; }
+    if (!previous.exercises.length) { toast('다시 시작할 종목이 없어요.'); return; }
+    const okay = change(s => {
+      const next = startSession(s);
+      next.name = previous.name;
+      const gym = s.gyms.find(g => g.id === next.gymId);
+      next.exercises = previous.exercises.map(e => {
+        const equipmentId = previous.gymId === next.gymId && gym?.equipment.some(q => q.id === e.equipmentId && q.exerciseId === e.exerciseId) ? e.equipmentId : '';
+        const sameGym = previous.gymId === next.gymId;
+        const type = exercise(e.exerciseId)?.type, count = Math.max(1, Math.min(30, e.sets.filter(x => x.kind === 'work').length));
+        const recording = recordingFor(s, {exerciseId:e.exerciseId,equipmentId}, next.gymId);
+        const fallback = {reps:type === 'cardio' ? 0 : e.repMin || 10, duration:type === 'time' ? 30 : 0, metrics:{...recording.defaults}};
+        return {...e,id:uid(),equipmentId,recording,note:s.exerciseNotes[e.exerciseId]||'',superset:'',
+          sets:sameGym && equipmentId === e.equipmentId ? previousSetInputs(s,e.exerciseId,equipmentId,count,fallback) : Array.from({length:count},()=>makeSet(fallback))};
+      });
+      s.draft = next;
+    });
+    if (okay) { cancelRest(); setModal(''); setPage('session'); }
+  }
   function previewShare(s: Session) { setModal(''); setCardSession(structuredClone(s)); }
   function quickInput() {
     const ex = EXERCISES.find(e => quickText.includes(e.name));
@@ -424,7 +448,7 @@ export default function WorkoutApp({
         setSwapId('');
       }
       setModal('exercise');
-    }}><span className={'exercise-icon group-' + e.group}><Dumbbell size={19} /></span><span><strong>{e.name}</strong><small>{e.equipment} · {e.primaryLabels.slice(0, 2).join(' · ') || e.group}</small></span></button><button className={'icon-button ' + (state.favorites.includes(e.id) ? 'starred' : '')} aria-label={`${e.name} 즐겨찾기`} onClick={() => change(s => {
+    }}><span className={'exercise-icon group-' + e.group}><ExercisePose name={e.name}/><Dumbbell size={19} aria-hidden="true"/></span><span><strong>{e.name}</strong><small>{e.equipment} · {e.primaryLabels.slice(0, 2).join(' · ') || e.group}</small></span></button><button className={'icon-button ' + (state.favorites.includes(e.id) ? 'starred' : '')} aria-label={`${e.name} 즐겨찾기`} onClick={() => change(s => {
       s.favorites = s.favorites.includes(e.id) ? s.favorites.filter(x => x !== e.id) : [...s.favorites, e.id];
     })}><Star size={18} fill={state.favorites.includes(e.id) ? 'currentColor' : 'none'} /></button>{pick && <button className="icon-button add" aria-label={`${e.name} 추가`} onClick={() => addExercise(e.id)}><Plus size={20} /></button>}</div>;
   const navItems = [{
@@ -526,7 +550,7 @@ export default function WorkoutApp({
                   recording=recordingFor(state,e),
                   timed = ex?.type === 'time' || ex?.type === 'cardio',
                   eq = state.gyms.flatMap(g => g.equipment).find(x => x.id === e.equipmentId);
-                return <section className="panel session-card" key={e.id}><div className="exercise-heading"><button onClick={() => {
+                return <section className="panel session-card" key={e.id}><div className="exercise-heading"><ExercisePose name={ex?.name || e.name}/><button onClick={() => {
                       if (!ex) {
                         toast('직접 추가한 운동은 타겟 근육이 지정되지 않았어요.');
                         return;
@@ -552,7 +576,7 @@ export default function WorkoutApp({
                     Object.assign(set, patch);
                   })} onComplete={id => toggleSet(e.id, id)} /> : <><GrowthTarget state={state} session={draft} item={e} onChange={(id,patch)=>patchSet(e.id,id,patch)}/><StrengthSets name={e.name} type={ex?.type} sets={e.sets} previous={last} recording={recording} onChange={(id,p)=>patchSet(e.id,id,p)} onComplete={id=>toggleSet(e.id,id)}/></>}
  {last.length > 0 && <button className="text-button target-load" onClick={()=>loadTargets(e)}>지난 세트를 오늘 목표로</button>}
- {last.length > 0 && <details className="last-record"><summary>지난 기록 보기</summary><p>{last.map(s => ex?.type === 'cardio' ? cardioSummary(e.name, s,recording) : ex?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,recording)} × ${s.reps}회`).join(' / ')}</p></details>}
+ <RecentAttempts state={state} session={draft} item={e}/>
  <div className="set-footer"><button onClick={() => changeDraft(s => {
                       const prev = s.exercises[ei].sets.at(-1);
                       s.exercises[ei].sets.push(makeSet({
@@ -591,7 +615,7 @@ export default function WorkoutApp({
               })}<button className="add-workout" onClick={() => openPicker()}><Plus size={19} />운동 추가</button></div><aside className="session-side"><section className="panel"><div className="section-title"><h3>오늘의 타겟</h3><span>{draft.exercises.length}개 종목</span></div><MuscleMap primary={plannedMuscles} secondary={plannedSecondary} compact /><div className="target-labels">{plannedMuscles.map(m => <span key={m}>{MUSCLES[m]}</span>)}</div></section><section className="panel"><h3>오늘의 컨디션</h3><div className="condition-buttons">{['가벼움', '보통', '피곤함'].map(c => <button className={draft.condition === c ? 'selected' : ''} onClick={() => changeDraft(s => {
                     s.condition = c;
                   })} key={c}>{c}</button>)}</div><p className="micro">RPE 7: 약 3회, 8: 약 2회, 9: 약 1회 더 할 수 있는 느낌. 선택 입력이에요.</p></section></aside></div></>}</>}
- {page === 'history' && <><div className="page-heading"><div><p className="eyebrow">YOUR TRAINING LOG</p><h1>쌓여가는 기록<span className="red-dot">.</span></h1><p className="subtext">총 {sessions.length}번의 운동. 하나씩, 꾸준하게.</p></div><button className="primary" onClick={() => start(undefined, true)}><Plus size={18} />과거 운동 기록</button></div><div className="filter-row"><input type="date" aria-label="운동 날짜 필터" value={recordFilter} onChange={e => setRecordFilter(e.target.value)} />{recordFilter && <button className="text-button" onClick={() => setRecordFilter('')}>전체 보기</button>}<span className="spacer" /><button className="secondary" onClick={exportCSV}><Download size={16} />CSV</button></div><section className="panel">{sessions.filter(s => !recordFilter || day(s.date) === recordFilter).length ? sessions.filter(s => !recordFilter || day(s.date) === recordFilter).map(sessionRow) : <Empty title="아직 기록이 없어요" description="선택한 날짜의 운동을 추가하거나 전체 기록을 확인하세요." />}</section></>}
+ {page === 'history' && <><div className="page-heading"><div><p className="eyebrow">YOUR TRAINING LOG</p><h1>쌓여가는 기록<span className="red-dot">.</span></h1><p className="subtext">총 {sessions.length}번의 운동. 하나씩, 꾸준하게.</p></div><button className="primary" onClick={() => start(undefined, true)}><Plus size={18} />과거 운동 기록</button></div><HistoryCalendar key={page} sessions={sessions} selected={recordFilter} onSelect={setRecordFilter}/><div className="filter-row"><input type="date" aria-label="운동 날짜 필터" value={recordFilter} onChange={e => setRecordFilter(e.target.value)} />{recordFilter && <button className="text-button" onClick={() => setRecordFilter('')}>전체 보기</button>}<span className="spacer" /><button className="secondary" onClick={exportCSV}><Download size={16} />CSV</button></div><section className="panel">{sessions.filter(s => !recordFilter || day(s.date) === recordFilter).length ? sessions.filter(s => !recordFilter || day(s.date) === recordFilter).map(sessionRow) : <Empty title="아직 기록이 없어요" description="선택한 날짜의 운동을 추가하거나 전체 기록을 확인하세요." />}</section></>}
  {page === 'routines' && <><div className="page-heading"><div><p className="eyebrow">BUILD YOUR CONSISTENCY</p><h1>나의 루틴<span className="red-dot">.</span></h1><p className="subtext">내 시간과 운동 환경에 맞게 조절하세요.</p></div><button className="primary" onClick={() => {
               setEditRoutine({
                 id: uid(),
@@ -606,14 +630,14 @@ export default function WorkoutApp({
                 })}><option value="">휴식 / 자유</option>{routines.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</NativeSelect></div>)}</div></section><div className="routine-grid">{routines.map((r, i) => <section className="panel routine-card" key={r.id}><div className="row between"><span className="routine-index">{String(i + 1).padStart(2, '0')}</span><button className="icon-button" aria-label={`${r.name} 편집`} onClick={() => {
                   setEditRoutine(structuredClone(r));
                   setModal('routine');
-                }}><Settings2 size={18} /></button></div><h2>{r.name}</h2><p>{r.exercises.length}개 종목 · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</p><div className="routine-exercises">{r.exercises.slice(0, 4).map((e, j) => <div key={j}><span>{exercise(e.exerciseId)?.name || e.exerciseId}</span><b>{e.sets} × {e.reps}–{Math.max(e.reps,e.repMax)}</b></div>)}{r.exercises.length > 4 && <small>+ {r.exercises.length - 4}개 종목</small>}</div><div className="row"><button className="secondary" onClick={() => {
+                }}><Settings2 size={18} /></button></div><h2>{r.name}</h2><p>{r.exercises.length}개 종목 · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</p><div className="routine-exercises">{r.exercises.slice(0, 4).map((e, j) => <div key={j}><ExercisePose name={exercise(e.exerciseId)?.name || e.exerciseId}/><span>{exercise(e.exerciseId)?.name || e.exerciseId}</span><b>{e.sets} × {e.reps}–{Math.max(e.reps,e.repMax)}</b></div>)}{r.exercises.length > 4 && <small>+ {r.exercises.length - 4}개 종목</small>}</div><div className="row"><button className="secondary" onClick={() => {
                   setFocusRoutine(r.id);
                   setPage('home');
                 }}>다음 운동으로</button><button className="primary" onClick={() => start(r)}><Play size={15} />시작</button></div></section>)}</div></>}
  {page === 'library' && <><div className="page-heading"><div><p className="eyebrow">KNOW YOUR MOVEMENT</p><h1>운동 사전<span className="red-dot">.</span></h1><p className="subtext">{EXERCISES.length}개 종목. 어디를 움직이는지, 어떻게 기록할지.</p></div><button className="secondary" onClick={() => {
               setPickerFor('session');
               setModal('custom');
-            }}><Plus size={17} />직접 추가</button></div><div className="search-box"><Search size={20} /><input placeholder="운동 이름 또는 초성으로 검색" aria-label="운동 검색" value={query} onChange={e => setQuery(e.target.value)} /><button className={favOnly ? 'starred' : ''} aria-label="즐겨찾기만 보기" onClick={() => setFavOnly(!favOnly)}><Star size={20} /></button></div><div className="filter-row"><div className="filter-chips">{GROUPS.map(g => <button key={g} className={group === g ? 'selected' : ''} onClick={() => setGroup(g)}>{g}</button>)}{!GROUPS.includes(group) && <button className="selected" onClick={() => setGroup('전체')}>{MUSCLES[group]} ×</button>}</div><NativeSelect aria-label="장비 필터" value={gearFilter} onChange={e => setGearFilter(e.target.value)}>{['전체', '머신', '덤벨', '바벨', '케이블', '맨몸', '밴드', '기타'].map(v => <option key={v}>{v}</option>)}</NativeSelect></div><div className="library-layout"><section className="panel exercise-list"><div className="section-title"><span>{matched.length}개 운동</span><span>종목을 눌러 타겟 확인</span></div>{matched.slice(0, 80).map(e => exRow(e, true))}{matched.length > 80 && <p className="micro">검색하거나 부위를 선택하면 더 빠르게 찾을 수 있어요.</p>}{!matched.length && <Empty title="검색 결과가 없어요" description="다른 이름이나 초성으로 검색해 보세요." />}</section><aside className="panel library-anatomy"><div className="section-title"><h3>근육으로 찾기</h3></div><MuscleMap primary={group === '전체' ? [] : [group]} onSelect={setGroup} /><p className="micro">근육 지도를 누르면 관련 종목을 찾을 수 있어요.</p><div className="target-labels">{Object.entries(MUSCLES).map(([id, label]) => <button className={group === id ? 'selected' : ''} onClick={() => setGroup(id)} key={id}>{label}</button>)}</div></aside></div></>}
+            }}><Plus size={17} />직접 추가</button></div><div className="search-box"><Search size={20} /><input placeholder="운동 이름 또는 초성으로 검색" aria-label="운동 검색" value={query} onChange={e => setQuery(e.target.value)} /><button className={favOnly ? 'starred' : ''} aria-label="즐겨찾기만 보기" onClick={() => setFavOnly(!favOnly)}><Star size={20} /></button></div><div className="filter-row"><div className="filter-chips">{GROUPS.map(g => <button key={g} className={group === g ? 'selected' : ''} onClick={() => setGroup(g)}>{g}</button>)}{!GROUPS.includes(group) && <button className="selected" onClick={() => setGroup('전체')}>{MUSCLES[group]} ×</button>}</div><NativeSelect aria-label="장비 필터" value={gearFilter} onChange={e => setGearFilter(e.target.value)}>{['전체', '머신', '덤벨', '바벨', '케이블', '맨몸', '밴드', '기타'].map(v => <option key={v}>{v}</option>)}</NativeSelect></div><div className="library-layout"><section className="panel exercise-list"><div className="section-title"><span>{matched.length}개 운동</span><span>종목을 눌러 타겟 확인</span></div>{matched.slice(0, catalogLimit).map(e => exRow(e, true))}{matched.length > catalogLimit && <button className="secondary full" onClick={() => setCatalogLimit(n => n + 60)}>운동 더 보기 · {catalogLimit}/{matched.length}</button>}{!matched.length && <Empty title="검색 결과가 없어요" description="다른 이름이나 초성으로 검색해 보세요." />}</section><aside className="panel library-anatomy"><div className="section-title"><h3>근육으로 찾기</h3></div><MuscleMap primary={group === '전체' ? [] : [group]} onSelect={setGroup} /><p className="micro">근육 지도를 누르면 관련 종목을 찾을 수 있어요.</p><div className="target-labels">{Object.entries(MUSCLES).map(([id, label]) => <button className={group === id ? 'selected' : ''} onClick={() => setGroup(id)} key={id}>{label}</button>)}</div></aside></div></>}
  {page === 'analysis' && <><div className="page-heading"><div><p className="eyebrow">A LITTLE STRONGER</p><h1>기록으로 보는 성장<span className="red-dot">.</span></h1><p className="subtext">어제의 나와 비교하고, 다음 운동을 준비하세요.</p></div><button className="primary" onClick={() => setModal('body')}><Plus size={18} />신체 기록</button></div><div className="stat-grid"><section className="stat-card"><span>누적 운동</span><strong>{sessions.length}<small>회</small></strong></section><section className="stat-card"><span>누적 본세트</span><strong>{number(sessions.reduce((n, s) => n + completedSets(s), 0))}<small>세트</small></strong></section><section className="stat-card"><span>운동 시간</span><strong>{number(sessions.reduce((n, s) => n + s.duration, 0) / 3600)}<small>시간</small></strong></section></div><div className="analysis-grid"><section className="panel"><div className="section-title"><h3>최근 8주 운동량</h3><span>완료한 본세트</span></div><ProgressChart data={Array.from({
                 length: 8
               }, (_, i) => {
@@ -626,13 +650,7 @@ export default function WorkoutApp({
                   id,
                   label,
                   count: weekSessions.reduce((n, s) => n + s.exercises.filter(e => exercise(e.exerciseId)?.primary.includes(id)).reduce((n, e) => n + e.sets.filter(x => x.done && x.kind !== 'warmup').length, 0), 0)
-                })).filter(x => x.count).sort((a, b) => b.count - a.count).slice(0, 7).map(x => <div key={x.id}><span>{x.label}</span><Progress value={Math.min(100, x.count / 30 * 100)} /><b>{x.count}</b></div>)}</div>{!weekSessions.length && <Empty title="이번 주 기록을 기다리고 있어요" description="완료한 운동의 주동근별 세트 수를 보여드려요." />}<p className="micro">복합 운동은 여러 주동근에 포함돼요. 이 값은 근육별 실제 자극량이나 회복도를 뜻하지 않아요.</p></section><section className="panel"><div className="section-title"><h3>종목별 기록 추이</h3><span>추정 1RM · kg</span></div><NativeSelect aria-label="분석할 운동" value={statsEx} onChange={e => {
-                setStatsEx(e.target.value);
-                setStatsEquipment('');
-              }}><option value="">종목 선택</option>{[...new Set(sessions.flatMap(s => s.exercises.map(e => e.exerciseId)))].filter(id => exercise(id)?.type === 'weight').map(id => <option key={id} value={id}>{exercise(id)?.name || id}</option>)}</NativeSelect>{statsEx ? <><Field label="기구별 비교"><NativeSelect aria-label="분석 기구" value={statsEquipment} onChange={e => setStatsEquipment(e.target.value)}><option value="">기본 기록</option>{[...new Set(sessions.flatMap(s => s.exercises.filter(e => e.exerciseId === statsEx && e.equipmentId).map(e => e.equipmentId)))].map(id => <option key={id} value={id}>{state.gyms.flatMap(g => g.equipment).find(e => e.id === id)?.name || id}</option>)}</NativeSelect></Field><ProgressChart line data={[...sessions].reverse().filter(s => s.exercises.some(e => e.exerciseId === statsEx)).slice(-20).map(s => ({
-                  label: day(s.date).slice(5),
-                  value: Math.max(0, ...s.exercises.filter(e => e.exerciseId === statsEx && e.equipmentId === statsEquipment).flatMap(e => e.sets.filter(x => x.done && x.kind === 'work').map(x => oneRM(x.weight, x.reps))))
-                })).filter(x => x.value > 0)} /><p className="micro">1~12회 본세트의 Epley 추정치예요. 기구별 저항과 가동범위가 다르면 직접 비교하기 어려워요. 1RM은 실제 최대 중량을 보장하지 않아요.</p></> : <Empty title="어떤 운동이 늘었을까요?" description="기록한 중량 운동을 선택하면 변화를 확인할 수 있어요." />}</section><section className="panel"><div className="section-title"><h3>몸의 변화</h3><button className="text-button" onClick={() => setModal('body')}>기록하기 <Plus size={15} /></button></div>{recentBody.length ? <><div className="body-summary"><strong>{number(recentBody[0].weight)}<small>kg</small></strong><span>{recentBody[0].date} 측정{state.profile.goalWeight ? ` · 목표 ${state.profile.goalWeight}kg` : ''}</span></div><ProgressChart line color="#94b8a3" data={[...recentBody].reverse().slice(-30).map(b => ({
+                })).filter(x => x.count).sort((a, b) => b.count - a.count).slice(0, 7).map(x => <div key={x.id}><span>{x.label}</span><Progress value={Math.min(100, x.count / 30 * 100)} /><b>{x.count}</b></div>)}</div>{!weekSessions.length && <Empty title="이번 주 기록을 기다리고 있어요" description="완료한 운동의 주동근별 세트 수를 보여드려요." />}<p className="micro">복합 운동은 여러 주동근에 포함돼요. 이 값은 근육별 실제 자극량이나 회복도를 뜻하지 않아요.</p></section><ExerciseTrends state={state} sessions={sessions}/><section className="panel"><div className="section-title"><h3>몸의 변화</h3><button className="text-button" onClick={() => setModal('body')}>기록하기 <Plus size={15} /></button></div>{recentBody.length ? <><div className="body-summary"><strong>{number(recentBody[0].weight)}<small>kg</small></strong><span>{recentBody[0].date} 측정{state.profile.goalWeight ? ` · 목표 ${state.profile.goalWeight}kg` : ''}</span></div><ProgressChart line color="#94b8a3" data={[...recentBody].reverse().slice(-30).map(b => ({
                   label: b.date.slice(5),
                   value: b.weight
                 }))} /><details><summary>신체 기록 전체 보기 ({recentBody.length})</summary>{recentBody.map(b => <div className="body-row" key={b.id}><span>{b.date}</span><b>{b.weight}kg</b><small>{b.fat ? `체지방 ${b.fat}%` : ''}{b.muscle ? ` · 골격근 ${b.muscle}kg` : ''}</small><button className="icon-button" aria-label={`${b.date} 신체 기록 삭제`} onClick={() => setConfirm({
@@ -647,7 +665,7 @@ export default function WorkoutApp({
                         });
                       }
                     })}><Trash2 size={14} /></button></div>)}</details></> : <Empty title="변화의 기준점을 남겨보세요" description="실제 측정한 체중·체지방률·골격근량을 기록해요. 목표 체중은 별도로 관리해요." action={<button className="secondary" onClick={() => setModal('body')}>첫 신체 기록</button>} />}</section></div></>}
- {page === 'settings' && <><div className="page-heading"><div><p className="eyebrow">MAKE IT YOURS</p><h1>나에게 맞게<span className="red-dot">.</span></h1><p className="subtext">운동 환경과 기록을 관리하세요.</p></div></div><div className="settings-grid"><section className="panel"><h3>프로필과 목표</h3><Field label="이름"><input value={state.profile.name} maxLength={80} placeholder="이름 또는 닉네임" onChange={e => change(s => {
+ {page === 'settings' && <><div className="page-heading"><div><p className="eyebrow">MAKE IT YOURS</p><h1>나에게 맞게<span className="red-dot">.</span></h1><p className="subtext">운동 환경과 기록을 관리하세요.</p></div></div><div className="settings-grid"><PoseImport catalog={exerciseNames}/><section className="panel"><h3>프로필과 목표</h3><Field label="이름"><input value={state.profile.name} maxLength={80} placeholder="이름 또는 닉네임" onChange={e => change(s => {
                   s.profile.name = e.target.value;
                   s.profile.updatedAt = Date.now();
                 })} /></Field><div className="form-grid"><Field label="주간 운동 목표"><NativeSelect value={state.profile.weeklyTarget} onChange={e => change(s => {
@@ -726,11 +744,11 @@ export default function WorkoutApp({
               assisted: '보조 중량 × 횟수',
               time: '시간',
               cardio: '기구별 기록'
-            }[selectedEx.type])}</div><MuscleMap primary={selectedEx.primary} secondary={selectedEx.secondary} compact /><div className="muscle-detail"><div><span className="primary-marker" />주동근<strong>{selectedEx.primaryLabels.join(' · ') || '종목과 동작에 따라 다름'}</strong></div><div><span className="secondary-marker" />보조근<strong>{selectedEx.secondaryLabels.join(' · ') || '별도 표기 없음'}</strong></div></div><div className="guide-block"><h3>동작 포인트</h3><p>{selectedEx.how}</p><h3>체크할 점</h3><p>{selectedEx.caution}</p>{selectedEx.equipment === '덤벨' && <p>중량은 덤벨 한 개 기준으로 일관되게 기록하세요. 볼륨 계산도 입력한 중량을 기준으로 해요.</p>}{selectedEx.type === 'assisted' && <p>기구의 보조 중량을 입력하세요. 보조가 줄어들수록 난도가 높아져요.</p>}</div><a className="secondary video-search" href={shortsSearchUrl(selectedEx.name)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><Video size={18} />유튜브 쇼츠 검색<ArrowUp size={15} className="external-arrow" /></a><p className="micro">새 탭에서 종목명으로 검색해요. 필요하면 YouTube의 Shorts 필터를 선택하세요.</p><div className="modal-actions"><button className="secondary" onClick={() => setModal('picker')}><ArrowLeft size={16} />목록</button><button className="primary" onClick={() => addExercise(selectedEx.id)}><Plus size={17} />{swapId ? '이 운동으로 교체' : '운동에 추가'}</button></div></>}
+            }[selectedEx.type])}</div><PersonalPose key={selectedEx.id} name={selectedEx.name}/><MuscleMap primary={selectedEx.primary} secondary={selectedEx.secondary} compact /><div className="muscle-detail"><div><span className="primary-marker" />주동근<strong>{selectedEx.primaryLabels.join(' · ') || '종목과 동작에 따라 다름'}</strong></div><div><span className="secondary-marker" />보조근<strong>{selectedEx.secondaryLabels.join(' · ') || '별도 표기 없음'}</strong></div></div><div className="guide-block"><h3>동작 포인트</h3><p>{selectedEx.how}</p><h3>체크할 점</h3><p>{selectedEx.caution}</p>{selectedEx.equipment === '덤벨' && <p>중량은 덤벨 한 개 기준으로 일관되게 기록하세요. 볼륨 계산도 입력한 중량을 기준으로 해요.</p>}{selectedEx.type === 'assisted' && <p>기구의 보조 중량을 입력하세요. 보조가 줄어들수록 난도가 높아져요.</p>}</div><a className="secondary video-search" href={shortsSearchUrl(selectedEx.name)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><Video size={18} />유튜브 쇼츠 검색<ArrowUp size={15} className="external-arrow" /></a><p className="micro">새 탭에서 종목명으로 검색해요. 필요하면 YouTube의 Shorts 필터를 선택하세요.</p><div className="modal-actions"><button className="secondary" onClick={() => setModal('picker')}><ArrowLeft size={16} />목록</button><button className="primary" onClick={() => addExercise(selectedEx.id)}><Plus size={17} />{swapId ? '이 운동으로 교체' : '운동에 추가'}</button></div></>}
  {modal === 'routine' && editRoutine && <><Field label="루틴 이름"><input value={editRoutine.name} maxLength={100} onChange={e => setEditRoutine({
               ...editRoutine,
               name: e.target.value
-            })} placeholder="예: 상체 A · 45분" /></Field><RoutineReview routine={editRoutine}/><div className="routine-edit-list">{editRoutine.exercises.map((e, i) => <div className="routine-edit-row" key={i}><div className="row between"><strong>{exercise(e.exerciseId)?.name || e.exerciseId}</strong><div className="row"><button className="icon-button" disabled={!i} aria-label="운동 위로" onClick={() => {
+            })} placeholder="예: 상체 A · 45분" /></Field><RoutineReview routine={editRoutine}/><div className="routine-edit-list">{editRoutine.exercises.map((e, i) => <div className="routine-edit-row" key={i}><div className="row between"><div className="pose-heading"><ExercisePose name={exercise(e.exerciseId)?.name || e.exerciseId}/><strong>{exercise(e.exerciseId)?.name || e.exerciseId}</strong></div><div className="row"><button className="icon-button" disabled={!i} aria-label="운동 위로" onClick={() => {
                     const a = [...editRoutine.exercises];
                     [a[i - 1], a[i]] = [a[i], a[i - 1]];
                     setEditRoutine({
@@ -872,7 +890,7 @@ export default function WorkoutApp({
             })} /></Field>}<div className="finish-stats"><div><b>{completedSets(draft)}</b><span>완료 본세트</span></div><div><b>{Math.round(elapsed(draft, now) / 60)}</b><span>운동 시간 (분)</span></div><div><b>{number(volume(draft))}</b><span>중량 볼륨 (kg)</span></div></div><Field label="오늘의 한 줄"><textarea maxLength={4000} placeholder="오늘 잘한 점이나 다음에 신경 쓸 점" value={draft.note} onChange={e => changeDraft(s => {
               s.note = e.target.value;
             })} /></Field>{routineChange?.changed && <section className="routine-change"><h3>오늘 바꾼 구성을 다음에도 쓸까요?</h3><p>{routineChange.routine.name} · 종목·순서·본세트 수·휴식 설정을 반영해요. 중량 입력은 다음에도 이전 기록이 우선이에요.</p><div className="routine-change-grid"><div><strong>기존 루틴</strong><ol>{routineChange.routine.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div><div><strong>반영할 구성</strong><ol>{routineChange.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div></div><p className="micro">완료 여부와 관계없이 오늘 구성한 본세트 수를 반영해요. 워밍업·드롭 세트는 제외해요.</p>{routineChange.conflict?<div><button className="secondary" onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><p role="status">시작 이후 기본 루틴이 변경돼 덮어쓰지 않아요. 오늘 기록만 저장해 주세요.</p></div>:<div className="row"><button className={reflectRoutine?'secondary':'primary'} aria-pressed={!reflectRoutine} onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><button className={reflectRoutine?'primary':'secondary'} aria-pressed={reflectRoutine} onClick={()=>setReflectRoutine(true)}>기본 루틴에도 반영</button></div>}</section>}<p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
- {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><div className="history-detail">{detailSession.exercises.map(e => <div key={e.id}><h3>{e.name}</h3><p>{e.sets.filter(s => s.done).map((s, i) => `${s.kind === 'warmup' ? 'W' : i + 1}. ${exercise(e.exerciseId)?.type === 'cardio' ? cardioSummary(e.name, s,historicalRecording(e)) : exercise(e.exerciseId)?.type === 'time' ? timeLabel(s.duration) : `${weightText(s.weight,historicalRecording(e))} × ${s.reps}회`}${s.rpe ? ` (RPE ${s.rpe})` : ''}`).join(' / ') || '완료 세트 없음'}</p>{e.note && <small>{e.note}</small>}</div>)}</div>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
+ {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><WorkoutHistoryRows session={detailSession} sessions={sessions}/>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
               title: '운동 기록을 삭제할까요?',
               detail: '설정 → 삭제한 운동에서 복원할 수 있어요.',
               action: () => {
@@ -883,7 +901,7 @@ export default function WorkoutApp({
                 });
                 setModal('');
               }
-            })}><Trash2 size={16} />삭제</button><span className="spacer" /><button className="secondary" onClick={() => previewShare(detailSession)}><Download size={16} />카드</button><button className="primary" onClick={() => {
+            })}><Trash2 size={16} />삭제</button><span className="spacer" /><button className="secondary" onClick={() => repeatSession(detailSession)}>이 구성으로 시작</button><button className="secondary" onClick={() => previewShare(detailSession)}><Download size={16} />카드</button><button className="primary" onClick={() => {
               if (draft) {
                 toast('먼저 진행 중인 운동을 마무리해 주세요.');
                 return;

@@ -345,3 +345,47 @@ test('repetition progression is bounded and completed warmup/drop rows never aff
 });
 test('unchanged routine and warmups alone do not prompt reflection',()=>{const s=defaultState(),d=startSession(s,s.routines[0]);assert.equal(routineUpdate(s,d)?.changed,false);d.exercises[0].sets.push(makeSet({kind:'warmup'}));assert.equal(routineUpdate(s,d)?.changed,false);});
 test('normal condition allows progression while fatigue and missing loads hold',()=>{const s=growthFixture(),d=s.draft!,e=d.exercises[0];s.sessions.forEach(x=>x.condition='보통');assert.ok(growthSuggestion(s,d,e).targets.length);d.condition='피곤함';assert.equal(growthSuggestion(s,d,e).targets.length,0);d.condition='';s.sessions[0].exercises[0].sets[0].weight=0;assert.equal(growthSuggestion(s,d,e).targets.length,0);});
+
+import {groupedSets, matchingAttempts, personalBests, workoutMetric} from '../lib/workout-insights';
+import {exercisePoses, readPoseArchive} from '../lib/pose-archive';
+import {defaultRecording as insightRecording} from '../lib/recording-settings';
+
+test('training comparisons exclude other gym, machine, basis, current and deleted sessions',()=>{
+  const current=saved().sessions[0], row=current.exercises[0];
+  current.date='2026-11-19T08:00:00Z';row.equipmentId='exact';
+  const same=structuredClone(current);
+  same.id='previous';same.date='2026-11-16T08:00:00Z';
+  same.exercises[0].sets.push(makeSet({kind:'warmup',weight:200,done:true}),makeSet({weight:200,done:false}));
+  const other=(id:string)=>({...structuredClone(same),id});
+  const wrongGym=other('gym');wrongGym.gymId='elsewhere';
+  const wrongMachine=other('machine');wrongMachine.exercises[0].equipmentId='other';
+  const wrongBasis=other('basis');wrongBasis.exercises[0].recording=insightRecording(true);
+  const deleted=other('deleted');deleted.deletedAt=1;
+  const recent=matchingAttempts([wrongGym,wrongMachine,wrongBasis,deleted,current,same],current,row);
+  assert.deepEqual(recent.map(x=>[x.id,x.sets.length]),[['previous',1]]);
+  row.sets=[makeSet({weight:40,reps:11,done:true}),makeSet({weight:45,reps:10,done:true})];
+  assert.deepEqual(personalBests([same,current],current,row),['최고 중량 45kg','반복 신기록 40kg × 11회','세트 볼륨 신기록 450 kg·회']);
+  assert.equal(personalBests([current],current,row).length,0);
+});
+test('history grouping retains order and set type; trend converts paired loads',()=>{
+  const row=saved().sessions[0].exercises[0];
+  const s=makeSet({weight:20,reps:12,done:true});
+  const entries=[s,s,makeSet({...s,kind:'drop'}),s,makeSet({...s,done:false})];
+  assert.deepEqual(groupedSets(row,entries).map(x=>[x.kind,x.count]),[['work',2],['drop',1],['work',1]]);
+  assert.equal(workoutMetric(entries,'volume',{...insightRecording(),weightBasis:'pair'}),1440);
+});
+test('pose mappings refer to catalog names and reject non-archives',async()=>{
+  const names=new Set(EXERCISES.map(ex=>ex.name));
+  for(const [name, asset] of Object.entries(exercisePoses)){
+    assert.ok(names.has(name), name);assert.match(asset.file,/^\d{6,7}\.png$/);
+    assert.match(asset.sha256,/^[a-f0-9]{64}$/);assert.ok(asset.bytes>0 && asset.bytes<512*1024);
+  }
+  await assert.rejects(()=>readPoseArchive(new Blob(['not an apk'])),/Fleek/);
+});
+test('the original XAPK imports every selected PNG without including code', {skip:!process.env.KEEP_HEALTHY_TEST_XAPK}, async()=>{
+  const bytes=new Uint8Array(readFileSync(process.env.KEEP_HEALTHY_TEST_XAPK!));
+  const images=await readPoseArchive(new Blob([bytes]));
+  assert.equal(images.size,new Set(Object.values(exercisePoses).map(x=>x.file)).size);
+  assert.equal(images.get('002512.png')?.type,'image/png');
+  assert.equal(images.has('classes.dex'),false);
+});
