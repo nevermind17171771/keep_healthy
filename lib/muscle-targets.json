@@ -1,0 +1,293 @@
+{
+  "targets": {
+    "chest-upper": {
+      "labelKo": "윗가슴",
+      "pathIds": {
+        "front": [
+          "front-chest-left-0",
+          "front-chest-right-0"
+        ],
+        "back": []
+      },
+      "note": "Upstream supplies one pectoralis region per side. Upper and mid chest intentionally share this outline; distinguish exercise emphasis in the text label."
+    },
+    "chest-mid": {
+      "labelKo": "가슴 중앙",
+      "pathIds": {
+        "front": [
+          "front-chest-left-0",
+          "front-chest-right-0"
+        ],
+        "back": []
+      },
+      "note": "Upstream supplies one pectoralis region per side. Upper and mid chest intentionally share this outline; distinguish exercise emphasis in the text label."
+    },
+    "anterior-delts": {
+      "labelKo": "전면 어깨",
+      "pathIds": {
+        "front": [
+          "front-deltoids-left-0",
+          "front-deltoids-right-0"
+        ],
+        "back": []
+      },
+      "note": "Front-view shoulder region; the anterior head is not separately outlined from the lateral head."
+    },
+    "lateral-delts": {
+      "labelKo": "측면 어깨",
+      "pathIds": {
+        "front": [
+          "front-deltoids-left-0",
+          "front-deltoids-right-0"
+        ],
+        "back": [
+          "back-deltoids-left-0",
+          "back-deltoids-right-0"
+        ]
+      },
+      "note": "Upstream has a single shoulder region per view and no separate lateral head. This target shares the front and back shoulder contours; do not describe it as isolated lateral-head anatomy."
+    },
+    "posterior-delts": {
+      "labelKo": "후면 어깨",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-deltoids-left-0",
+          "back-deltoids-right-0"
+        ]
+      },
+      "note": "Back-view shoulder region; the posterior head is not separately outlined from the lateral head."
+    },
+    "lats": {
+      "labelKo": "광배근",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-upper-back-left-1",
+          "back-upper-back-right-2"
+        ]
+      },
+      "note": "These two broad lower-lateral polygons within the upstream upper-back group are a positional interpretation of the latissimus region. The smaller scapular polygons are excluded."
+    },
+    "traps": {
+      "labelKo": "승모근",
+      "pathIds": {
+        "front": [
+          "front-trapezius-left-0",
+          "front-trapezius-right-0"
+        ],
+        "back": [
+          "back-trapezius-left-0",
+          "back-trapezius-right-0"
+        ]
+      }
+    },
+    "biceps": {
+      "labelKo": "이두근",
+      "pathIds": {
+        "front": [
+          "front-biceps-left-0",
+          "front-biceps-right-0"
+        ],
+        "back": []
+      }
+    },
+    "triceps": {
+      "labelKo": "삼두근",
+      "pathIds": {
+        "front": [
+          "front-triceps-left-0",
+          "front-triceps-right-0"
+        ],
+        "back": [
+          "back-triceps-left-0",
+          "back-triceps-left-1",
+          "back-triceps-left-2",
+          "back-triceps-right-0",
+          "back-triceps-right-1",
+          "back-triceps-right-2"
+        ]
+      }
+    },
+    "forearms": {
+      "labelKo": "전완근",
+      "pathIds": {
+        "front": [
+          "front-forearm-left-0",
+          "front-forearm-left-1",
+          "front-forearm-left-2",
+          "front-forearm-right-0",
+          "front-forearm-right-1",
+          "front-forearm-right-2"
+        ],
+        "back": [
+          "back-forearm-left-0",
+          "back-forearm-left-1",
+          "back-forearm-left-2",
+          "back-forearm-left-3",
+          "back-forearm-right-0",
+          "back-forearm-right-1",
+          "back-forearm-right-2",
+          "back-forearm-right-3"
+        ]
+      }
+    },
+    "abs": {
+      "labelKo": "복직근",
+      "pathIds": {
+        "front": [
+          "front-abs-left-0",
+          "front-abs-left-1",
+          "front-abs-left-2",
+          "front-abs-left-3",
+          "front-abs-right-0",
+          "front-abs-right-1",
+          "front-abs-right-2",
+          "front-abs-right-3"
+        ],
+        "back": []
+      }
+    },
+    "obliques": {
+      "labelKo": "복사근",
+      "pathIds": {
+        "front": [
+          "front-obliques-right-0",
+          "front-obliques-right-1",
+          "front-obliques-right-2",
+          "front-obliques-right-3",
+          "front-obliques-right-4",
+          "front-obliques-right-5",
+          "front-obliques-right-6",
+          "front-obliques-right-7",
+          "front-obliques-left-0",
+          "front-obliques-left-1",
+          "front-obliques-left-2",
+          "front-obliques-left-3",
+          "front-obliques-left-4",
+          "front-obliques-left-5",
+          "front-obliques-left-6",
+          "front-obliques-left-7"
+        ],
+        "back": []
+      }
+    },
+    "glutes": {
+      "labelKo": "둔근",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-gluteal-left-0",
+          "back-gluteal-left-1",
+          "back-gluteal-right-0",
+          "back-gluteal-right-1"
+        ]
+      }
+    },
+    "quads": {
+      "labelKo": "대퇴사두근",
+      "pathIds": {
+        "front": [
+          "front-quadriceps-left-0",
+          "front-quadriceps-left-1",
+          "front-quadriceps-left-2",
+          "front-quadriceps-right-0",
+          "front-quadriceps-right-1",
+          "front-quadriceps-right-2"
+        ],
+        "back": []
+      }
+    },
+    "hamstrings": {
+      "labelKo": "햄스트링",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-hamstring-left-0",
+          "back-hamstring-left-1",
+          "back-hamstring-left-2",
+          "back-hamstring-left-3",
+          "back-hamstring-right-0",
+          "back-hamstring-right-1",
+          "back-hamstring-right-2",
+          "back-hamstring-right-3"
+        ]
+      }
+    },
+    "calves": {
+      "labelKo": "종아리",
+      "pathIds": {
+        "front": [
+          "front-calves-left-0",
+          "front-calves-left-1",
+          "front-calves-right-0",
+          "front-calves-right-1"
+        ],
+        "back": [
+          "back-calves-left-0",
+          "back-calves-left-1",
+          "back-calves-left-2",
+          "back-calves-left-3",
+          "back-calves-right-0",
+          "back-calves-right-1",
+          "back-calves-right-2",
+          "back-calves-right-3"
+        ]
+      }
+    },
+    "upper-back": {
+      "labelKo": "상부 등",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-upper-back-left-0",
+          "back-upper-back-left-1",
+          "back-upper-back-left-2",
+          "back-upper-back-right-0",
+          "back-upper-back-right-1",
+          "back-upper-back-right-2"
+        ]
+      }
+    },
+    "lower-back": {
+      "labelKo": "하부 등",
+      "pathIds": {
+        "front": [],
+        "back": [
+          "back-lower-back-left-0",
+          "back-lower-back-left-1",
+          "back-lower-back-right-0",
+          "back-lower-back-right-1"
+        ]
+      }
+    },
+    "adductors": {
+      "labelKo": "내전근",
+      "pathIds": {
+        "front": [
+          "front-adductors-left-0",
+          "front-adductors-left-1",
+          "front-adductors-left-2",
+          "front-adductors-right-0",
+          "front-adductors-right-1",
+          "front-adductors-right-2"
+        ],
+        "back": [
+          "back-adductors-left-0",
+          "back-adductors-right-0"
+        ]
+      }
+    }
+  },
+  "highlightPriority": [
+    "primary",
+    "secondary",
+    "neutral"
+  ],
+  "colors": {
+    "primary": "#e45449",
+    "secondary": "#e5ae50",
+    "neutral": "#c4cbc7"
+  },
+  "sideConvention": "Path IDs preserve upstream side labels. Use paired paths for exercise-target highlighting; source labels are not guaranteed anatomical left/right."
+}
