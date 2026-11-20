@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { exercise, defaultState, type Routine } from '@/lib/model';
+import { exercise, defaultState, type AppState, type Routine } from '@/lib/model';
+import { recommendProgram, type ProgramGoal } from '@/lib/recommend-program';
 import { PROGRAMS, programRoutines, planVolume, routineWarnings, type PlanMode } from '@/lib/programs';
 import { alternatives, type TrainingProgram } from '@/lib/program-data';
 export function RoutineReview({
@@ -15,14 +16,19 @@ export function RoutineReview({
   return notes.length ? <div className="program-notice"><strong>구성 점검 · 참고</strong>{notes.map(n => <p key={n}>{n}</p>)}<small>특화 훈련 목적일 수도 있어요. 순서는 자동 변경하지 않아요.</small></div> : null;
 }
 export default function ProgramLibrary({
+  state,
   onImport
 }: {
+  state?: AppState;
   onImport: (r: Routine[], w: number[], schedule: boolean) => boolean;
 }) {
   const [id, setId] = useState(PROGRAMS[0].id),
     [mode, setMode] = useState<PlanMode>('standard');
+  const [goal, setGoal] = useState<ProgramGoal>('priority');
+  const recommended = state ? recommendProgram(state, goal) : null;
+  const recommendedName = recommended && PROGRAMS.find(program => program.id === recommended.id)?.name;
   const p = PROGRAMS.find(p => p.id === id)!;
-  return <section className="panel program-library"><div className="section-title"><div><p className="eyebrow">PROGRAMS · 4.3</p><h2>검토하고 가져오는 운동 프로그램</h2></div></div><p className="subtext">개정 프로그램은 새 루틴으로 추가해요. 내 기록과 편집한 루틴은 그대로 남아요.</p><div className="form-grid"><label className="field"><span>프로그램</span><NativeSelect aria-label="프로그램 선택" value={id} onChange={e => setId(e.target.value)}>{PROGRAMS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect></label><label className="field"><span>운동량 선택</span><NativeSelect aria-label="프로그램 운동량" value={mode} onChange={e => setMode(e.target.value as PlanMode)}><option value="standard">기본 구성</option><option value="short">시간 부족 · 핵심 2–3종목</option><option value="easy">가볍게 · 종목당 2세트</option></NativeSelect></label></div><ProgramPreview key={id + mode} program={p} mode={mode} onImport={onImport} /><details className="program-volume"><summary>기존 기본 루틴 개정본 15개 보기</summary><p className="micro">기존에 저장된 루틴은 바뀌지 않아요. 수정한 순서·세트·휴식을 확인하고 필요한 개정본만 추가하세요. 하루 루틴이므로 주간 일정은 직접 정하세요.</p>{defaultState().routines.map((r, i) => <details key={r.id}><summary>{r.name} · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</summary><ol>{r.exercises.map((e, j) => <li key={j}>{exercise(e.exerciseId)?.name} · {e.sets} × {e.reps}–{e.repMax}회 · 휴식 {e.rest}초</li>)}</ol><RoutineReview routine={r} /><button className="secondary" onClick={() => onImport([{
+  return <section className="panel program-library"><div className="section-title"><div><p className="eyebrow">PROGRAMS · 4.3</p><h2>검토하고 가져오는 운동 프로그램</h2></div></div><p className="subtext">개정 프로그램은 새 루틴으로 추가해요. 내 기록과 편집한 루틴은 그대로 남아요.</p>{recommended && recommendedName && <section className="program-notice" aria-label="내 기록으로 추천한 프로그램"><label className="field"><span>이번 목표</span><NativeSelect aria-label="추천 목표" value={goal} onChange={e => setGoal(e.target.value as ProgramGoal)}><option value="priority">가슴·어깨 집중</option><option value="balance">상·하체 균형</option><option value="time">짧은 시간에 운동</option><option value="return">가볍게 복귀</option></NativeSelect></label><strong>{recommendedName}</strong><p>{recommended.reason}</p><p className="micro">{recommended.observed}</p><button className="secondary" onClick={() => {setId(recommended.id);setMode('standard');}}>이 추천 프로그램 보기</button></section>}<div className="form-grid"><label className="field"><span>프로그램</span><NativeSelect aria-label="프로그램 선택" value={id} onChange={e => setId(e.target.value)}>{PROGRAMS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect></label><label className="field"><span>운동량 선택</span><NativeSelect aria-label="프로그램 운동량" value={mode} onChange={e => setMode(e.target.value as PlanMode)}><option value="standard">기본 구성</option><option value="short">시간 부족 · 핵심 2–3종목</option><option value="easy">가볍게 · 종목당 2세트</option></NativeSelect></label></div><ProgramPreview key={id + mode} program={p} mode={mode} onImport={onImport} /><details className="program-volume"><summary>기존 기본 루틴 개정본 15개 보기</summary><p className="micro">기존에 저장된 루틴은 바뀌지 않아요. 수정한 순서·세트·휴식을 확인하고 필요한 개정본만 추가하세요. 하루 루틴이므로 주간 일정은 직접 정하세요.</p>{defaultState().routines.map((r, i) => <details key={r.id}><summary>{r.name} · {r.exercises.reduce((n, e) => n + e.sets, 0)}세트</summary><ol>{r.exercises.map((e, j) => <li key={j}>{exercise(e.exerciseId)?.name} · {e.sets} × {e.reps}–{e.repMax}회 · 휴식 {e.rest}초</li>)}</ol><RoutineReview routine={r} /><button className="secondary" onClick={() => onImport([{
           ...r,
           id: `review43-${i}`,
           name: r.name + ' · 개정'

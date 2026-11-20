@@ -1,6 +1,7 @@
 'use client';
 import ExercisePose, {PersonalPose, PoseImport} from '@/components/exercise-pose';
 import {RecentAttempts, WorkoutHistoryRows} from '@/components/workout-insights';
+import WorkoutRecap from '@/components/workout-recap';
 import HistoryCalendar from '@/components/history-calendar';
 import ExerciseTrends from '@/components/exercise-trends';
 import { deferExercise } from '@/lib/session-actions';
@@ -109,7 +110,6 @@ export default function WorkoutApp({
     [now, setNow] = useState(Date.now()),
     [recordFilter, setRecordFilter] = useState(''),
     [cardSession, setCardSession] = useState<Session | null>(null),
-    [shareSession, setShareSession] = useState<Session | null>(null),
     [backups, setBackups] = useState<{
       id: string;
       created: string;
@@ -331,9 +331,10 @@ export default function WorkoutApp({
     if (!okay) return;
     setReflectRoutine(false);
     cancelRest();
-    setModal('');
-    setPage('home');
-    setShareSession(saved);
+    setDetailSession(saved);
+    setRecordFilter('');
+    setPage('history');
+    setModal('history');
     toast.success('오늘의 운동을 기록했어요.');
   }
   const exportJSON = () => {
@@ -624,7 +625,7 @@ export default function WorkoutApp({
                 updatedAt: Date.now()
               });
               setModal('routine');
-            }}><Plus size={18} />루틴 만들기</button></div><ProgramLibrary onImport={(rs,week,schedule)=>{let imported=false;const okay=change(s=>{imported=importProgram(s,rs,week,schedule);});if(okay&&imported){if(schedule)setFocusRoutine('');toast.success('새 프로그램을 루틴에 추가했어요.');return true;}toast('이미 추가한 구성은 내 루틴에서 편집하세요.');return false;}}/><section className="panel"><div className="section-title"><h3>주간 계획</h3><span>요일에 루틴을 연결하세요</span></div><div className="planner">{days.map((d, i) => <div key={d}><strong>{d}</strong><NativeSelect aria-label={`${d}요일 루틴`} value={state.profile.weekPlan[weekKeys[i]] || ''} onChange={e => change(s => {
+            }}><Plus size={18} />루틴 만들기</button></div><ProgramLibrary state={state} onImport={(rs,week,schedule)=>{let imported=false;const okay=change(s=>{imported=importProgram(s,rs,week,schedule);});if(okay&&imported){if(schedule)setFocusRoutine('');toast.success('새 프로그램을 루틴에 추가했어요.');return true;}toast('이미 추가한 구성은 내 루틴에서 편집하세요.');return false;}}/><section className="panel"><div className="section-title"><h3>주간 계획</h3><span>요일에 루틴을 연결하세요</span></div><div className="planner">{days.map((d, i) => <div key={d}><strong>{d}</strong><NativeSelect aria-label={`${d}요일 루틴`} value={state.profile.weekPlan[weekKeys[i]] || ''} onChange={e => change(s => {
                   s.profile.weekPlan[weekKeys[i]] = e.target.value;
                   s.profile.updatedAt = Date.now();
                 })}><option value="">휴식 / 자유</option>{routines.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</NativeSelect></div>)}</div></section><div className="routine-grid">{routines.map((r, i) => <section className="panel routine-card" key={r.id}><div className="row between"><span className="routine-index">{String(i + 1).padStart(2, '0')}</span><button className="icon-button" aria-label={`${r.name} 편집`} onClick={() => {
@@ -718,7 +719,7 @@ export default function WorkoutApp({
                     delete x.deletedAt;
                     x.updatedAt = Date.now();
                   })}>복원</button></div>)}</details></section><section className="panel"><h3>앱처럼 사용하기</h3><p className="subtext">iPhone은 Safari 공유 메뉴 → 홈 화면에 추가, Android는 브라우저 메뉴 → 앱 설치를 선택하세요.</p><p className="micro">휴식은 앱을 다시 열어도 남은 시간을 복원해요. 앱이 실행되는 동안 벨과 알림을 보내요. 다른 앱 사용·화면 잠금으로 실행이 멈추면 알림이 늦을 수 있으며, 현재 백그라운드 예약 푸시는 지원하지 않아요.</p><label className="field"><span>휴식 알림 방식 · 이 기기</span><NativeSelect value={soundEnabled?'bell':'visual'} onChange={e=>setSound(e.target.value==='bell',bellVolume)}><option value="bell">음악 유지 · 벨 + 화면 표시</option><option value="visual">화면 표시만</option></NativeSelect></label><label className="field"><span>벨 음량 {Math.round(bellVolume*100)}%</span><input aria-label="벨 음량" type="range" min="0" max="1" step="0.1" value={bellVolume} onChange={e=>setSound(soundEnabled,Number(e.target.value))}/></label><div className="bell-setting"><div><strong>휴식 알림 · 복싱 라운드 벨</strong><p className="micro">휴식이 끝나면 금속 벨이 세 번 울려요.</p></div><button className="secondary" onClick={()=>void testSound()}><Volume2 size={16} />벨 테스트</button></div><p className="micro">벨 테스트: 복싱 벨이 바로 3번 울리는지 확인해요. 배너 테스트: 알림 허용을 요청하고 휴대폰 알림센터로 테스트 알림을 보내요.</p><div className="alarm-test-actions"><button className="secondary" onClick={()=>void testNotification()}>알림 권한 · 배너 테스트</button><button className="secondary" disabled={restRemaining>0} onClick={testCountdown}>5초 휴식 테스트</button></div>{soundStatus&&<p className="alarm-test-result" role="status">{soundStatus}</p>}{notificationStatus&&<p className="alarm-test-result" role="status">{notificationStatus}</p>}<p className="micro">5초 휴식 테스트는 화면을 켠 채로 확인해 주세요. 백그라운드 예약 알림을 검사하는 기능은 아니에요.</p><h3 className="section-gap">근육 지도 안내</h3><p className="micro">주동근은 코랄, 보조근은 골드로 표시해요. 도식은 부위를 찾기 위한 참고 자료예요. 가슴 상·하부와 삼각근 세부 구획은 텍스트에서 구분하며, 실제 자극은 자세·가동범위에 따라 달라져요.</p><a className="text-link" href="/MUSCLE-LICENSE.txt" target="_blank" rel="noreferrer">근육 도식 라이선스 (MIT)</a><p className="micro">KEEP HEALTHY 4.5 · 운동 기록과 꾸준함을 위한 앱</p></section></div></>}
- {shareSession && page === 'home' && <div className="share-strip"><CheckCheck size={20} /><span><strong>오늘도 한 걸음.</strong> 운동을 기록했어요.</span><button className="text-button" onClick={() => previewShare(shareSession)}><Download size={16} />오운완 카드</button><button className="icon-button" aria-label="완료 안내 닫기" onClick={() => setShareSession(null)}><X size={17} /></button></div>}
+
  </main></div>
  <Dialog open={!!modal} onOpenChange={v => {
       if (!v) setModal('');
@@ -890,7 +891,7 @@ export default function WorkoutApp({
             })} /></Field>}<div className="finish-stats"><div><b>{completedSets(draft)}</b><span>완료 본세트</span></div><div><b>{Math.round(elapsed(draft, now) / 60)}</b><span>운동 시간 (분)</span></div><div><b>{number(volume(draft))}</b><span>중량 볼륨 (kg)</span></div></div><Field label="오늘의 한 줄"><textarea maxLength={4000} placeholder="오늘 잘한 점이나 다음에 신경 쓸 점" value={draft.note} onChange={e => changeDraft(s => {
               s.note = e.target.value;
             })} /></Field>{routineChange?.changed && <section className="routine-change"><h3>오늘 바꾼 구성을 다음에도 쓸까요?</h3><p>{routineChange.routine.name} · 종목·순서·본세트 수·휴식 설정을 반영해요. 중량 입력은 다음에도 이전 기록이 우선이에요.</p><div className="routine-change-grid"><div><strong>기존 루틴</strong><ol>{routineChange.routine.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div><div><strong>반영할 구성</strong><ol>{routineChange.exercises.map((e,i)=><li key={i}>{exercise(e.exerciseId)?.name||e.exerciseId} · {e.sets}세트 · {e.reps}–{e.repMax}회 · {timeLabel(e.rest)} 휴식</li>)}</ol></div></div><p className="micro">완료 여부와 관계없이 오늘 구성한 본세트 수를 반영해요. 워밍업·드롭 세트는 제외해요.</p>{routineChange.conflict?<div><button className="secondary" onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><p role="status">시작 이후 기본 루틴이 변경돼 덮어쓰지 않아요. 오늘 기록만 저장해 주세요.</p></div>:<div className="row"><button className={reflectRoutine?'secondary':'primary'} aria-pressed={!reflectRoutine} onClick={()=>setReflectRoutine(false)}>오늘만 변경</button><button className={reflectRoutine?'primary':'secondary'} aria-pressed={reflectRoutine} onClick={()=>setReflectRoutine(true)}>기본 루틴에도 반영</button></div>}</section>}<p className="micro">완료 표시한 세트만 통계에 반영돼요. 기록하지 않은 세트도 원본에 남아요.</p><button className="primary full" onClick={finish}><Check size={18} />운동 저장</button></>}
- {modal === 'history' && detailSession && <><p className="subtext">{dateText(detailSession.date)} · {Math.round(detailSession.duration / 60)}분 · {completedSets(detailSession)}세트</p><WorkoutHistoryRows session={detailSession} sessions={sessions}/>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
+ {modal === 'history' && detailSession && <><WorkoutRecap state={state} session={detailSession} onShare={() => previewShare(detailSession)}/><WorkoutHistoryRows session={detailSession} sessions={sessions}/>{detailSession.note && <p className="quote-note">{detailSession.note}</p>}<div className="modal-actions"><button className="text-button danger" onClick={() => setConfirm({
               title: '운동 기록을 삭제할까요?',
               detail: '설정 → 삭제한 운동에서 복원할 수 있어요.',
               action: () => {
@@ -901,7 +902,7 @@ export default function WorkoutApp({
                 });
                 setModal('');
               }
-            })}><Trash2 size={16} />삭제</button><span className="spacer" /><button className="secondary" onClick={() => repeatSession(detailSession)}>이 구성으로 시작</button><button className="secondary" onClick={() => previewShare(detailSession)}><Download size={16} />카드</button><button className="primary" onClick={() => {
+            })}><Trash2 size={16} />삭제</button><span className="spacer" /><button className="secondary" onClick={() => repeatSession(detailSession)}>이 구성으로 시작</button><button className="primary" onClick={() => {
               if (draft) {
                 toast('먼저 진행 중인 운동을 마무리해 주세요.');
                 return;
